@@ -244,6 +244,7 @@ interface IssueChatThreadProps {
   hasOutputForRun?: (runId: string) => boolean;
   includeSucceededRunsWithoutOutput?: boolean;
   sortOrder?: IssueDetailTimelineOrder;
+  composerPlacement?: "top" | "bottom";
   onInterruptQueued?: (runId: string) => Promise<void>;
   onCancelQueued?: (commentId: string) => void;
   interruptingQueuedRunId?: string | null;
@@ -1879,6 +1880,7 @@ export function IssueChatThread({
   hasOutputForRun: hasOutputForRunOverride,
   includeSucceededRunsWithoutOutput = false,
   sortOrder = "asc",
+  composerPlacement,
   onInterruptQueued,
   onCancelQueued,
   interruptingQueuedRunId = null,
@@ -2069,14 +2071,34 @@ export function IssueChatThread({
   );
 
   const resolvedShowJumpToLatest = showJumpToLatest ?? variant === "full";
+  const resolvedComposerPlacement = composerPlacement ?? (sortOrder === "desc" ? "top" : "bottom");
   const resolvedEmptyMessage = emptyMessage
     ?? (variant === "embedded"
       ? "No run output yet."
-      : "This issue conversation is empty. Start with a message below.");
+      : "This issue conversation is empty. Start with a message.");
   const errorBoundaryResetKey = useMemo(
     () => messages.map((message) => `${message.id}:${message.role}:${message.content.length}:${message.status?.type ?? "none"}`).join("|"),
     [messages],
   );
+
+  const composerNode = showComposer ? (
+    <div ref={composerViewportAnchorRef} data-testid={`issue-chat-composer-placement-${resolvedComposerPlacement}`}>
+      <IssueChatComposer
+        ref={composerRef}
+        onImageUpload={imageUploadHandler}
+        onAttachImage={onAttachImage}
+        draftKey={draftKey}
+        enableReassign={enableReassign}
+        reassignOptions={reassignOptions}
+        currentAssigneeValue={currentAssigneeValue}
+        suggestedAssigneeValue={suggestedAssigneeValue}
+        mentions={mentions}
+        agentMap={agentMap}
+        composerDisabledReason={composerDisabledReason}
+        issueStatus={issueStatus}
+      />
+    </div>
+  ) : null;
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -2093,6 +2115,8 @@ export function IssueChatThread({
             </button>
           </div>
         ) : null}
+
+        {resolvedComposerPlacement === "top" ? composerNode : null}
 
         <IssueChatErrorBoundary
           resetKey={errorBoundaryResetKey}
@@ -2118,24 +2142,7 @@ export function IssueChatThread({
           </ThreadPrimitive.Root>
         </IssueChatErrorBoundary>
 
-        {showComposer ? (
-          <div ref={composerViewportAnchorRef}>
-            <IssueChatComposer
-              ref={composerRef}
-              onImageUpload={imageUploadHandler}
-              onAttachImage={onAttachImage}
-              draftKey={draftKey}
-              enableReassign={enableReassign}
-              reassignOptions={reassignOptions}
-              currentAssigneeValue={currentAssigneeValue}
-              suggestedAssigneeValue={suggestedAssigneeValue}
-              mentions={mentions}
-              agentMap={agentMap}
-              composerDisabledReason={composerDisabledReason}
-              issueStatus={issueStatus}
-            />
-          </div>
-        ) : null}
+        {resolvedComposerPlacement === "bottom" ? composerNode : null}
       </div>
       </IssueChatCtx.Provider>
     </AssistantRuntimeProvider>

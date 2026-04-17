@@ -333,6 +333,92 @@ describe("IssueChatThread", () => {
     });
   });
 
+  it("places the composer above messages for newest-first conversations and still submits", async () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <IssueChatThread
+            comments={[]}
+            linkedRuns={[]}
+            timelineEvents={[]}
+            liveRuns={[]}
+            onAdd={async () => {}}
+            sortOrder="desc"
+            enableLiveTranscriptPolling={false}
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    const composer = container.querySelector('[data-testid="issue-chat-composer-placement-top"]') as HTMLDivElement | null;
+    const threadRoot = container.querySelector('[data-testid="thread-root"]') as HTMLDivElement | null;
+    expect(composer).not.toBeNull();
+    expect(threadRoot).not.toBeNull();
+    expect(composer!.compareDocumentPosition(threadRoot!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    const editor = container.querySelector('textarea[aria-label="Issue chat editor"]') as HTMLTextAreaElement | null;
+    const submitButton = Array.from(container.querySelectorAll("button")).find(
+      (element) => element.textContent === "Send",
+    ) as HTMLButtonElement | undefined;
+    expect(editor).not.toBeNull();
+    expect(submitButton).toBeDefined();
+
+    act(() => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(editor, "Newest-first reply");
+      editor?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await act(async () => {
+      submitButton?.click();
+    });
+
+    expect(appendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [{ type: "text", text: "Newest-first reply" }],
+      }),
+    );
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("keeps the composer below messages for oldest-first conversations", () => {
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <IssueChatThread
+            comments={[]}
+            linkedRuns={[]}
+            timelineEvents={[]}
+            liveRuns={[]}
+            onAdd={async () => {}}
+            sortOrder="asc"
+            enableLiveTranscriptPolling={false}
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    const composer = container.querySelector('[data-testid="issue-chat-composer-placement-bottom"]') as HTMLDivElement | null;
+    const threadRoot = container.querySelector('[data-testid="thread-root"]') as HTMLDivElement | null;
+    expect(composer).not.toBeNull();
+    expect(threadRoot).not.toBeNull();
+    expect(threadRoot!.compareDocumentPosition(composer!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("keeps the composer inline with bottom breathing room and a capped editor height", () => {
     const root = createRoot(container);
 
