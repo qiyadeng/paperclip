@@ -421,6 +421,154 @@ describe("IssuesList", () => {
     });
   });
 
+
+  it("renders list, tree, and board view buttons together", async () => {
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[createIssue()]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const titles = Array.from(container.querySelectorAll("button"))
+        .map((button) => button.getAttribute("title"))
+        .filter(Boolean);
+      expect(titles).toContain("List view");
+      expect(titles).toContain("Tree view");
+      expect(titles).toContain("Board view");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("switches between flat list and parent-child tree views", async () => {
+    const parentIssue = createIssue({
+      id: "issue-parent",
+      identifier: "PAP-1",
+      title: "Parent issue",
+    });
+    const childIssue = createIssue({
+      id: "issue-child",
+      identifier: "PAP-2",
+      title: "Child issue",
+      parentId: "issue-parent",
+    });
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[parentIssue, childIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const childRow = Array.from(container.querySelectorAll('[data-testid="issue-row"]'))
+        .find((row) => row.textContent?.includes("Child issue"));
+      expect((childRow?.parentElement as HTMLDivElement | null)?.style.paddingLeft).toBe("16px");
+    });
+
+    await act(async () => {
+      const listButton = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.getAttribute("title") === "List view");
+      listButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await waitForAssertion(() => {
+      const childRow = Array.from(container.querySelectorAll('[data-testid="issue-row"]'))
+        .find((row) => row.textContent?.includes("Child issue"));
+      expect((childRow?.parentElement as HTMLDivElement | null)?.style.paddingLeft).toBe("");
+    });
+
+    await act(async () => {
+      const treeButton = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.getAttribute("title") === "Tree view");
+      treeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await waitForAssertion(() => {
+      const childRow = Array.from(container.querySelectorAll('[data-testid="issue-row"]'))
+        .find((row) => row.textContent?.includes("Child issue"));
+      expect((childRow?.parentElement as HTMLDivElement | null)?.style.paddingLeft).toBe("16px");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("migrates legacy nested list view state to tree view", async () => {
+    localStorage.setItem(
+      "paperclip:test-issues:company-1",
+      JSON.stringify({ viewMode: "list", nestingEnabled: true }),
+    );
+    const parentIssue = createIssue({ id: "issue-parent", title: "Parent issue" });
+    const childIssue = createIssue({ id: "issue-child", title: "Child issue", parentId: "issue-parent" });
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[parentIssue, childIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const childRow = Array.from(container.querySelectorAll('[data-testid="issue-row"]'))
+        .find((row) => row.textContent?.includes("Child issue"));
+      expect((childRow?.parentElement as HTMLDivElement | null)?.style.paddingLeft).toBe("16px");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("migrates legacy non-nested list view state to flat list view", async () => {
+    localStorage.setItem(
+      "paperclip:test-issues:company-1",
+      JSON.stringify({ viewMode: "list", nestingEnabled: false }),
+    );
+    const parentIssue = createIssue({ id: "issue-parent", title: "Parent issue" });
+    const childIssue = createIssue({ id: "issue-child", title: "Child issue", parentId: "issue-parent" });
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[parentIssue, childIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const childRow = Array.from(container.querySelectorAll('[data-testid="issue-row"]'))
+        .find((row) => row.textContent?.includes("Child issue"));
+      expect((childRow?.parentElement as HTMLDivElement | null)?.style.paddingLeft).toBe("");
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("skips deferred row sizing for expanded parent rows with visible children", async () => {
     const parentIssue = createIssue({
       id: "issue-parent",

@@ -63,14 +63,20 @@ const ISSUE_ROW_RENDER_BATCH_DELAY_MS = 0;
 
 /* ── View state ── */
 
+export type IssueViewMode = "list" | "tree" | "board";
+
 export type IssueViewState = IssueFilterState & {
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "workspace" | "parent" | "none";
-  viewMode: "list" | "board";
-  nestingEnabled: boolean;
+  viewMode: IssueViewMode;
   collapsedGroups: string[];
   collapsedParents: string[];
+};
+
+type PersistedIssueViewState = Partial<IssueViewState> & {
+  viewMode?: unknown;
+  nestingEnabled?: unknown;
 };
 
 const defaultViewState: IssueViewState = {
@@ -78,18 +84,37 @@ const defaultViewState: IssueViewState = {
   sortField: "updated",
   sortDir: "desc",
   groupBy: "none",
-  viewMode: "list",
-  nestingEnabled: true,
+  viewMode: "tree",
   collapsedGroups: [],
   collapsedParents: [],
 };
+
+function normalizePersistedViewMode(parsed: PersistedIssueViewState): IssueViewMode {
+  if (parsed.viewMode === "board" || parsed.viewMode === "tree") return parsed.viewMode;
+  if (parsed.viewMode === "list") {
+    if (Object.prototype.hasOwnProperty.call(parsed, "nestingEnabled")) {
+      return parsed.nestingEnabled === false ? "list" : "tree";
+    }
+    return "list";
+  }
+  return defaultViewState.viewMode;
+}
+
+function normalizePersistedViewState(parsed: PersistedIssueViewState): IssueViewState {
+  const { nestingEnabled: _legacyNestingEnabled, ...rest } = parsed;
+  return {
+    ...defaultViewState,
+    ...rest,
+    ...normalizeIssueFilterState(parsed),
+    viewMode: normalizePersistedViewMode(parsed),
+  };
+}
 
 function getViewState(key: string): IssueViewState {
   try {
     const raw = localStorage.getItem(key);
     if (raw) {
-      const parsed = JSON.parse(raw);
-      return { ...defaultViewState, ...parsed, ...normalizeIssueFilterState(parsed) };
+      return normalizePersistedViewState(JSON.parse(raw) as PersistedIssueViewState);
     }
   } catch { /* ignore */ }
   return { ...defaultViewState };
@@ -607,13 +632,16 @@ export function IssuesList({
     }));
   }, [filtered, viewState.groupBy, agents, agentName, currentUserId, workspaceNameMap, issueTitleMap]);
 
-  useEffect(() => {
-    if (viewState.viewMode !== "list") return;
-    setRenderedIssueRowLimit(Math.min(filtered.length, INITIAL_ISSUE_ROW_RENDER_LIMIT));
-  }, [filtered, viewState.viewMode]);
+  const isIssueRowsView = viewState.viewMode !== "board";
+  const isTreeView = viewState.viewMode === "tree";
 
   useEffect(() => {
-    if (viewState.viewMode !== "list") return;
+    if (!isIssueRowsView) return;
+    setRenderedIssueRowLimit(Math.min(filtered.length, INITIAL_ISSUE_ROW_RENDER_LIMIT));
+  }, [filtered, isIssueRowsView]);
+
+  useEffect(() => {
+    if (!isIssueRowsView) return;
     if (renderedIssueRowLimit >= filtered.length) return;
 
     const timeoutId = window.setTimeout(() => {
@@ -623,7 +651,7 @@ export function IssuesList({
     }, ISSUE_ROW_RENDER_BATCH_DELAY_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [filtered.length, renderedIssueRowLimit, viewState.viewMode]);
+  }, [filtered.length, isIssueRowsView, renderedIssueRowLimit]);
 
   const remainingIssueRowCount = Math.max(filtered.length - renderedIssueRowLimit, 0);
 
@@ -676,7 +704,7 @@ export function IssuesList({
     setAssigneeSearch("");
   }, [onUpdateIssue]);
 
-  let remainingRowsToRender = viewState.viewMode === "list" ? renderedIssueRowLimit : Number.POSITIVE_INFINITY;
+  let remainingRowsToRender = isIssueRowsView ? renderedIssueRowLimit : Number.POSITIVE_INFINITY;
 
   return (
     <div className="space-y-4">
@@ -707,6 +735,13 @@ export function IssuesList({
               <List className="h-3.5 w-3.5" />
             </button>
             <button
+              className={`p-1.5 transition-colors ${viewState.viewMode === "tree" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => updateView({ viewMode: "tree" })}
+              title="Tree view"
+            >
+              <ListTree className="h-3.5 w-3.5" />
+            </button>
+            <button
               className={`p-1.5 transition-colors ${viewState.viewMode === "board" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "board" })}
               title="Board view"
@@ -714,19 +749,6 @@ export function IssuesList({
               <Columns3 className="h-3.5 w-3.5" />
             </button>
           </div>
-
-          {viewState.viewMode === "list" && (
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className={cn("hidden h-8 w-8 shrink-0 sm:inline-flex", viewState.nestingEnabled && "bg-accent")}
-              onClick={() => updateView({ nestingEnabled: !viewState.nestingEnabled })}
-              title={viewState.nestingEnabled ? "Disable parent-child nesting" : "Enable parent-child nesting"}
-            >
-              <ListTree className="h-3.5 w-3.5" />
-            </Button>
-          )}
 
           <IssueColumnPicker
             availableColumns={availableIssueColumns}
@@ -751,8 +773,8 @@ export function IssuesList({
             workspaces={isolatedWorkspacesEnabled ? workspaceOptions : undefined}
           />
 
-          {/* Sort (list view only) */}
-          {viewState.viewMode === "list" && (
+          {/* Sort (list/tree views only) */}
+          {isIssueRowsView && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Sort">
@@ -794,8 +816,8 @@ export function IssuesList({
             </Popover>
           )}
 
-          {/* Group (list view only) */}
-          {viewState.viewMode === "list" && (
+          {/* Group (list/tree views only) */}
+          {isIssueRowsView && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" title="Group">
@@ -837,7 +859,7 @@ export function IssuesList({
           Showing up to {ISSUE_SEARCH_RESULT_LIMIT} matches. Refine the search to narrow further.
         </p>
       )}
-      {!isLoading && filtered.length === 0 && viewState.viewMode === "list" && (
+      {!isLoading && filtered.length === 0 && isIssueRowsView && (
         <EmptyState
           icon={CircleDot}
           message="No issues match the current filters or search."
@@ -895,7 +917,7 @@ export function IssuesList({
             )}
             <CollapsibleContent>
               {(() => {
-                const { roots, childMap } = viewState.nestingEnabled
+                const { roots, childMap } = isTreeView
                   ? buildIssueTree(group.items)
                   : { roots: group.items, childMap: new Map<string, Issue[]>() };
 
@@ -1112,7 +1134,7 @@ export function IssuesList({
           </Collapsible>
           );
           })}
-          {remainingIssueRowCount > 0 && (
+          {isIssueRowsView && remainingIssueRowCount > 0 && (
             <p className="text-xs text-muted-foreground">
               Rendering {Math.min(renderedIssueRowLimit, filtered.length)} of {filtered.length} issues
             </p>
