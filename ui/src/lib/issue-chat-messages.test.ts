@@ -322,6 +322,32 @@ describe("buildIssueChatMessages", () => {
     });
   });
 
+  it("orders issue chat messages newest first when requested", () => {
+    const messages = buildIssueChatMessages({
+      comments: [
+        createComment({ id: "comment-old", body: "Old", createdAt: new Date("2026-04-06T12:00:00.000Z") }),
+        createComment({ id: "comment-new", body: "New", createdAt: new Date("2026-04-06T12:02:00.000Z") }),
+      ],
+      timelineEvents: [{
+        id: "event-middle",
+        createdAt: new Date("2026-04-06T12:01:00.000Z"),
+        actorType: "user",
+        actorId: "user-1",
+        statusChange: { from: "todo", to: "in_progress" },
+      }],
+      linkedRuns: [],
+      liveRuns: [],
+      sortOrder: "desc",
+      currentUserId: "user-1",
+    });
+
+    expect(messages.map((message) => message.id)).toEqual([
+      "comment-new",
+      "activity:event-middle",
+      "comment-old",
+    ]);
+  });
+
   it("keeps succeeded runs as assistant messages when transcript output exists", () => {
     const agentMap = new Map<string, Agent>([["agent-1", createAgent("agent-1", "CodexCoder")]]);
     const messages = buildIssueChatMessages({

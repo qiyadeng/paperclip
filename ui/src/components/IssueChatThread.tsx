@@ -46,6 +46,7 @@ import {
 } from "../lib/issue-chat-messages";
 import { resolveIssueChatTranscriptRuns } from "../lib/issueChatTranscriptRuns";
 import type { IssueTimelineAssignee, IssueTimelineEvent } from "../lib/issue-timeline-events";
+import type { IssueDetailTimelineOrder } from "../lib/issue-detail-timeline-order";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -242,6 +243,7 @@ interface IssueChatThreadProps {
   transcriptsByRunId?: ReadonlyMap<string, readonly IssueChatTranscriptEntry[]>;
   hasOutputForRun?: (runId: string) => boolean;
   includeSucceededRunsWithoutOutput?: boolean;
+  sortOrder?: IssueDetailTimelineOrder;
   onInterruptQueued?: (runId: string) => Promise<void>;
   onCancelQueued?: (commentId: string) => void;
   interruptingQueuedRunId?: string | null;
@@ -1876,6 +1878,7 @@ export function IssueChatThread({
   transcriptsByRunId,
   hasOutputForRun: hasOutputForRunOverride,
   includeSucceededRunsWithoutOutput = false,
+  sortOrder = "asc",
   onInterruptQueued,
   onCancelQueued,
   interruptingQueuedRunId = null,
@@ -1947,6 +1950,7 @@ export function IssueChatThread({
         projectId,
         agentMap,
         currentUserId,
+        sortOrder,
       }),
     [
       comments,
@@ -1961,6 +1965,7 @@ export function IssueChatThread({
       projectId,
       agentMap,
       currentUserId,
+      sortOrder,
     ],
   );
   const stableMessagesRef = useRef<readonly import("@assistant-ui/react").ThreadMessage[]>([]);

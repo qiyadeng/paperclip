@@ -1,4 +1,5 @@
 import type { Issue, IssueComment } from "@paperclipai/shared";
+import type { IssueDetailTimelineOrder } from "./issue-detail-timeline-order";
 
 export interface IssueCommentReassignment {
   assigneeAgentId: string | null;
@@ -25,16 +26,15 @@ function createOptimisticCommentId() {
   return `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function sortIssueComments<T extends { createdAt: Date | string; id: string }>(comments: T[]) {
+export function sortIssueComments<T extends { createdAt: Date | string; id: string }>(
+  comments: T[],
+  order: IssueDetailTimelineOrder = "asc",
+) {
   return [...comments].sort((a, b) => {
     const createdAtDiff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
-    if (createdAtDiff !== 0) return createdAtDiff;
-    return a.id.localeCompare(b.id);
+    if (createdAtDiff !== 0) return order === "asc" ? createdAtDiff : -createdAtDiff;
+    return order === "asc" ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
   });
-}
-
-function sortIssueCommentsDesc<T extends { createdAt: Date | string; id: string }>(comments: T[]) {
-  return sortIssueComments(comments).reverse();
 }
 
 export function createOptimisticIssueComment(params: {
@@ -85,6 +85,7 @@ export function isQueuedIssueComment(params: {
 export function mergeIssueComments(
   comments: IssueComment[] | undefined,
   optimisticComments: OptimisticIssueComment[],
+  order: IssueDetailTimelineOrder = "asc",
 ): IssueTimelineComment[] {
   const merged = [...(comments ?? [])];
   const existingIds = new Set(merged.map((comment) => comment.id));
@@ -93,7 +94,7 @@ export function mergeIssueComments(
       merged.push(comment);
     }
   }
-  return sortIssueComments(merged);
+  return sortIssueComments(merged, order);
 }
 
 export function takeOptimisticIssueComment(
@@ -113,8 +114,9 @@ export function takeOptimisticIssueComment(
 
 export function flattenIssueCommentPages(
   pages: ReadonlyArray<ReadonlyArray<IssueComment>> | undefined,
+  order: IssueDetailTimelineOrder = "asc",
 ): IssueComment[] {
-  return sortIssueComments((pages ?? []).flatMap((page) => page));
+  return sortIssueComments((pages ?? []).flatMap((page) => page), order);
 }
 
 export function getNextIssueCommentPageParam(
@@ -128,16 +130,17 @@ export function getNextIssueCommentPageParam(
 export function upsertIssueComment(
   comments: IssueComment[] | undefined,
   nextComment: IssueComment,
+  order: IssueDetailTimelineOrder = "asc",
 ): IssueComment[] {
   const current = comments ?? [];
   const existingIndex = current.findIndex((comment) => comment.id === nextComment.id);
   if (existingIndex === -1) {
-    return sortIssueComments([...current, nextComment]);
+    return sortIssueComments([...current, nextComment], order);
   }
 
   const updated = [...current];
   updated[existingIndex] = nextComment;
-  return sortIssueComments(updated);
+  return sortIssueComments(updated, order);
 }
 
 export function applyOptimisticIssueCommentUpdate(
@@ -252,6 +255,7 @@ export function applyOptimisticIssueFieldUpdateToCollection(
 export function upsertIssueCommentInPages(
   pages: ReadonlyArray<ReadonlyArray<IssueComment>> | undefined,
   nextComment: IssueComment,
+  order: IssueDetailTimelineOrder = "desc",
 ): IssueComment[][] {
   if (!pages || pages.length === 0) {
     return [[nextComment]];
@@ -262,11 +266,11 @@ export function upsertIssueCommentInPages(
     const existingIndex = nextPages[pageIndex]!.findIndex((comment) => comment.id === nextComment.id);
     if (existingIndex === -1) continue;
     nextPages[pageIndex]![existingIndex] = nextComment;
-    nextPages[pageIndex] = sortIssueCommentsDesc(nextPages[pageIndex]!);
+    nextPages[pageIndex] = sortIssueComments(nextPages[pageIndex]!, order);
     return nextPages;
   }
 
-  nextPages[0] = sortIssueCommentsDesc([...nextPages[0]!, nextComment]);
+  nextPages[0] = sortIssueComments([...nextPages[0]!, nextComment], order);
   return nextPages;
 }
 

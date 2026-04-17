@@ -103,6 +103,40 @@ describe("optimistic issue comments", () => {
     expect(merged.map((comment) => comment.id)).toEqual(["optimistic-1", "comment-2"]);
   });
 
+  it("merges optimistic comments in newest-first order when requested", () => {
+    const merged = mergeIssueComments(
+      [
+        {
+          id: "comment-1",
+          companyId: "company-1",
+          issueId: "issue-1",
+          authorAgentId: null,
+          authorUserId: "board-1",
+          body: "Old",
+          createdAt: new Date("2026-03-28T14:00:01.000Z"),
+          updatedAt: new Date("2026-03-28T14:00:01.000Z"),
+        },
+      ],
+      [
+        {
+          id: "optimistic-1",
+          clientId: "optimistic-1",
+          clientStatus: "pending",
+          companyId: "company-1",
+          issueId: "issue-1",
+          authorAgentId: null,
+          authorUserId: "board-1",
+          body: "New",
+          createdAt: new Date("2026-03-28T14:00:03.000Z"),
+          updatedAt: new Date("2026-03-28T14:00:03.000Z"),
+        },
+      ],
+      "desc",
+    );
+
+    expect(merged.map((comment) => comment.id)).toEqual(["optimistic-1", "comment-1"]);
+  });
+
   it("can take one optimistic queued comment back out of the queue", () => {
     const first = createOptimisticIssueComment({
       companyId: "company-1",
@@ -198,6 +232,37 @@ describe("optimistic issue comments", () => {
     expect(flattened.map((comment) => comment.id)).toEqual(["comment-1", "comment-2", "comment-3"]);
   });
 
+  it("flattens paged comments in newest-first order when requested", () => {
+    const flattened = flattenIssueCommentPages([
+      [
+        {
+          id: "comment-3",
+          companyId: "company-1",
+          issueId: "issue-1",
+          authorAgentId: null,
+          authorUserId: "board-1",
+          body: "Newest",
+          createdAt: new Date("2026-03-28T14:00:03.000Z"),
+          updatedAt: new Date("2026-03-28T14:00:03.000Z"),
+        },
+      ],
+      [
+        {
+          id: "comment-1",
+          companyId: "company-1",
+          issueId: "issue-1",
+          authorAgentId: null,
+          authorUserId: "board-1",
+          body: "Oldest",
+          createdAt: new Date("2026-03-28T14:00:01.000Z"),
+          updatedAt: new Date("2026-03-28T14:00:01.000Z"),
+        },
+      ],
+    ], "desc");
+
+    expect(flattened.map((comment) => comment.id)).toEqual(["comment-3", "comment-1"]);
+  });
+
   it("returns no next page param when the last page is missing", () => {
     expect(getNextIssueCommentPageParam(undefined, 50)).toBeUndefined();
   });
@@ -274,6 +339,34 @@ describe("optimistic issue comments", () => {
 
     expect(nextPages[0]?.map((comment) => comment.id)).toEqual(["comment-4", "comment-3"]);
     expect(nextPages[1]?.map((comment) => comment.id)).toEqual(["comment-1"]);
+  });
+
+  it("upserts paged comments in oldest-first order when requested", () => {
+    const nextPages = upsertIssueCommentInPages(
+      [[{
+        id: "comment-2",
+        companyId: "company-1",
+        issueId: "issue-1",
+        authorAgentId: null,
+        authorUserId: "board-1",
+        body: "Second",
+        createdAt: new Date("2026-03-28T14:00:02.000Z"),
+        updatedAt: new Date("2026-03-28T14:00:02.000Z"),
+      }]],
+      {
+        id: "comment-1",
+        companyId: "company-1",
+        issueId: "issue-1",
+        authorAgentId: null,
+        authorUserId: "board-1",
+        body: "First",
+        createdAt: new Date("2026-03-28T14:00:01.000Z"),
+        updatedAt: new Date("2026-03-28T14:00:01.000Z"),
+      },
+      "asc",
+    );
+
+    expect(nextPages[0]?.map((comment) => comment.id)).toEqual(["comment-1", "comment-2"]);
   });
 
   it("removes a confirmed queued comment from paged caches", () => {

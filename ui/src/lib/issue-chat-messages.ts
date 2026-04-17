@@ -11,6 +11,7 @@ import type { Agent, IssueComment } from "@paperclipai/shared";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
 import { formatAssigneeUserLabel } from "./assignees";
 import type { IssueTimelineEvent } from "./issue-timeline-events";
+import type { IssueDetailTimelineOrder } from "./issue-detail-timeline-order";
 import {
   summarizeNotice,
 } from "./transcriptPresentation";
@@ -129,11 +130,14 @@ export function stabilizeThreadMessages(
   };
 }
 
-function sortByCreated<T extends { createdAt: Date | string; id: string }>(items: readonly T[]) {
+function sortByCreated<T extends { createdAt: Date | string; id: string }>(
+  items: readonly T[],
+  order: IssueDetailTimelineOrder = "asc",
+) {
   return [...items].sort((a, b) => {
     const diff = toTimestamp(a.createdAt) - toTimestamp(b.createdAt);
-    if (diff !== 0) return diff;
-    return a.id.localeCompare(b.id);
+    if (diff !== 0) return order === "asc" ? diff : -diff;
+    return order === "asc" ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
   });
 }
 
@@ -743,6 +747,7 @@ export function buildIssueChatMessages(args: {
   projectId?: string | null;
   agentMap?: Map<string, Agent>;
   currentUserId?: string | null;
+  sortOrder?: IssueDetailTimelineOrder;
 }) {
   const {
     comments,
@@ -758,11 +763,12 @@ export function buildIssueChatMessages(args: {
     projectId,
     agentMap,
     currentUserId,
+    sortOrder = "asc",
   } = args;
 
   const orderedMessages: MessageWithOrder[] = [];
 
-  for (const comment of sortByCreated(comments)) {
+  for (const comment of sortByCreated(comments, sortOrder)) {
     orderedMessages.push({
       createdAtMs: toTimestamp(comment.createdAt),
       order: 1,
@@ -770,7 +776,7 @@ export function buildIssueChatMessages(args: {
     });
   }
 
-  for (const event of sortByCreated(timelineEvents)) {
+  for (const event of sortByCreated(timelineEvents, sortOrder)) {
     orderedMessages.push({
       createdAtMs: toTimestamp(event.createdAt),
       order: 0,
@@ -778,7 +784,11 @@ export function buildIssueChatMessages(args: {
     });
   }
 
-  for (const run of [...linkedRuns].sort((a, b) => toTimestamp(runTimestamp(a)) - toTimestamp(runTimestamp(b)))) {
+  for (const run of [...linkedRuns].sort((a, b) => {
+    const diff = toTimestamp(runTimestamp(a)) - toTimestamp(runTimestamp(b));
+    if (diff !== 0) return sortOrder === "asc" ? diff : -diff;
+    return sortOrder === "asc" ? a.runId.localeCompare(b.runId) : b.runId.localeCompare(a.runId);
+  })) {
     const transcript = transcriptsByRunId?.get(run.runId) ?? [];
     const hasRunOutput = transcript.length > 0 || (hasOutputForRun?.(run.runId) ?? false);
     if (hasRunOutput || run.status !== "succeeded") {
@@ -818,7 +828,9 @@ export function buildIssueChatMessages(args: {
 
   return orderedMessages
     .sort((a, b) => {
-      if (a.createdAtMs !== b.createdAtMs) return a.createdAtMs - b.createdAtMs;
+      if (a.createdAtMs !== b.createdAtMs) {
+        return sortOrder === "asc" ? a.createdAtMs - b.createdAtMs : b.createdAtMs - a.createdAtMs;
+      }
       if (a.order !== b.order) return a.order - b.order;
       return a.message.id.localeCompare(b.message.id);
     })

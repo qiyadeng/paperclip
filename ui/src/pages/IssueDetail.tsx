@@ -57,8 +57,8 @@ import { relativeTime, cn, formatTokens, visibleRunCostUsd } from "../lib/utils"
 import { ApprovalCard } from "../components/ApprovalCard";
 import { InlineEditor } from "../components/InlineEditor";
 import { IssueChatThread, type IssueChatComposerHandle } from "../components/IssueChatThread";
+import { IssueRelationsSection } from "../components/IssueRelationsSection";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
-import { IssuesList } from "../components/IssuesList";
 import { IssueProperties } from "../components/IssueProperties";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import type { MentionOption } from "../components/MarkdownEditor";
@@ -78,11 +78,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatIssueActivityAction } from "@/lib/activity-format";
 import { buildIssuePropertiesPanelKey } from "../lib/issue-properties-panel-key";
-import { shouldRenderRichSubIssuesSection } from "../lib/issue-detail-subissues";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
+import {
+  readIssueDetailTimelineOrder,
+  saveIssueDetailTimelineOrder,
+  type IssueDetailTimelineOrder,
+} from "../lib/issue-detail-timeline-order";
 import {
   Activity as ActivityIcon,
   Archive,
+  ArrowDownUp,
   ArrowLeft,
   Check,
   ChevronRight,
@@ -496,6 +501,7 @@ type IssueDetailChatTabProps = {
   hasOlderComments: boolean;
   commentsLoadingOlder: boolean;
   onLoadOlderComments: () => void;
+  timelineOrder: IssueDetailTimelineOrder;
   composerRef: Ref<IssueChatComposerHandle>;
   feedbackVotes?: FeedbackVote[];
   feedbackDataSharingPreference: "allowed" | "not_allowed" | "prompt";
@@ -532,6 +538,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   hasOlderComments,
   commentsLoadingOlder,
   onLoadOlderComments,
+  timelineOrder,
   composerRef,
   feedbackVotes,
   feedbackDataSharingPreference,
@@ -663,7 +670,9 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
             disabled={commentsLoadingOlder}
             onClick={onLoadOlderComments}
           >
-            {commentsLoadingOlder ? "Loading earlier comments..." : "Load earlier comments"}
+            {commentsLoadingOlder
+              ? "Loading comments..."
+              : timelineOrder === "desc" ? "Load older comments" : "Load newer comments"}
           </Button>
         </div>
       ) : null}
@@ -704,6 +713,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
             }
           : undefined}
         onImageClick={onImageClick}
+        sortOrder={timelineOrder}
       />
     </div>
   );
@@ -715,6 +725,7 @@ type IssueDetailActivityTabProps = {
   currentUserId: string | null;
   pendingApprovalAction: { approvalId: string; action: "approve" | "reject" } | null;
   onApprovalAction: (approvalId: string, action: "approve" | "reject") => void;
+  timelineOrder: IssueDetailTimelineOrder;
 };
 
 function IssueDetailActivityTab({
@@ -723,6 +734,7 @@ function IssueDetailActivityTab({
   currentUserId,
   pendingApprovalAction,
   onApprovalAction,
+  timelineOrder,
 }: IssueDetailActivityTabProps) {
   const { data: activity, isLoading: activityLoading } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
@@ -742,6 +754,13 @@ function IssueDetailActivityTab({
   const initialLoading =
     (activityLoading && activity === undefined)
     || (linkedRunsLoading && linkedRuns === undefined);
+  const sortedActivity = useMemo(() => {
+    return [...(activity ?? [])].sort((a, b) => {
+      const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (diff !== 0) return timelineOrder === "asc" ? diff : -diff;
+      return timelineOrder === "asc" ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
+    });
+  }, [activity, timelineOrder]);
   const issueCostSummary = useMemo(() => {
     let input = 0;
     let output = 0;
@@ -831,11 +850,11 @@ function IssueDetailActivityTab({
           )}
         </div>
       )}
-      {!activity || activity.length === 0 ? (
+      {sortedActivity.length === 0 ? (
         <p className="text-xs text-muted-foreground">No activity yet.</p>
       ) : (
         <div className="space-y-1.5">
-          {activity.slice(0, 20).map((evt) => (
+          {sortedActivity.slice(0, 20).map((evt) => (
             <div key={evt.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <ActorIdentity evt={evt} agentMap={agentMap} />
               <span>{formatIssueActivityAction(evt.action, evt.details, { agentMap, currentUserId })}</span>
@@ -864,6 +883,7 @@ export function IssueDetail() {
   const [copied, setCopied] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("chat");
+  const [timelineOrder, setTimelineOrder] = useState<IssueDetailTimelineOrder>(() => readIssueDetailTimelineOrder());
   const [pendingApprovalAction, setPendingApprovalAction] = useState<{
     approvalId: string;
     action: "approve" | "reject";
@@ -904,6 +924,10 @@ export function IssueDetail() {
     }
     return getClosedIsolatedExecutionWorkspaceMessage(issue.currentExecutionWorkspace);
   }, [issue?.currentExecutionWorkspace]);
+  const issueCommentsQueryKey = useMemo(
+    () => [...queryKeys.issues.comments(issueId!), timelineOrder] as const,
+    [issueId, timelineOrder],
+  );
 
   const {
     data: commentPages,
@@ -912,10 +936,10 @@ export function IssueDetail() {
     hasNextPage: hasOlderComments,
     fetchNextPage: fetchOlderComments,
   } = useInfiniteQuery({
-    queryKey: queryKeys.issues.comments(issueId!),
+    queryKey: issueCommentsQueryKey,
     queryFn: ({ pageParam }) =>
       issuesApi.listComments(issueId!, {
-        order: "desc",
+        order: timelineOrder,
         limit: ISSUE_COMMENT_PAGE_SIZE,
         ...(pageParam ? { after: pageParam } : {}),
       }),
@@ -926,8 +950,8 @@ export function IssueDetail() {
     placeholderData: keepPreviousDataForSameQueryTail<InfiniteData<IssueComment[], string | null>>(issueId ?? "pending"),
   });
   const comments = useMemo(
-    () => flattenIssueCommentPages(commentPages?.pages),
-    [commentPages?.pages],
+    () => flattenIssueCommentPages(commentPages?.pages, timelineOrder),
+    [commentPages?.pages, timelineOrder],
   );
 
   const { data: attachments, isLoading: attachmentsLoading } = useQuery({
@@ -1073,7 +1097,6 @@ export function IssueDetail() {
     () => childIssues,
     [issuePanelKey],
   );
-  const showRichSubIssuesSection = shouldRenderRichSubIssuesSection(childIssuesLoading, childIssues.length);
   const openNewSubIssue = useCallback(() => {
     if (!issue) return;
     openNewIssue(buildSubIssueDefaultsForViewer(issue, currentUserId));
@@ -1106,15 +1129,15 @@ export function IssueDetail() {
     () =>
       suggestedCommentAssigneeValue(
         issue ?? {},
-        mergeIssueComments(comments ?? [], optimisticComments),
+        mergeIssueComments(comments ?? [], optimisticComments, "asc"),
         currentUserId,
       ),
     [issue, comments, optimisticComments, currentUserId],
   );
 
   const threadComments = useMemo(
-    () => mergeIssueComments(comments ?? [], optimisticComments),
-    [comments, optimisticComments],
+    () => mergeIssueComments(comments ?? [], optimisticComments, timelineOrder),
+    [comments, optimisticComments, timelineOrder],
   );
   const breadcrumbTitle = issue?.title ?? issueId ?? "Issue";
 
@@ -1135,7 +1158,7 @@ export function IssueDetail() {
 
   const removeCommentFromCache = useCallback((commentId: string) => {
     queryClient.setQueryData<InfiniteData<IssueComment[], string | null> | undefined>(
-      queryKeys.issues.comments(issueId!),
+      issueCommentsQueryKey,
       (current) => {
         if (!current) return current;
         return {
@@ -1144,7 +1167,7 @@ export function IssueDetail() {
         };
       },
     );
-  }, [issueId, queryClient]);
+  }, [issueCommentsQueryKey, queryClient]);
 
   const restoreQueuedCommentDraft = useCallback((body: string) => {
     commentComposerRef.current?.restoreDraft(body);
@@ -1253,26 +1276,6 @@ export function IssueDetail() {
     updateIssue.mutate(data);
   }, [updateIssue.mutate]);
 
-  const updateChildIssue = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
-    onSuccess: () => {
-      if (resolvedCompanyId) {
-        queryClient.invalidateQueries({ queryKey: ["issues", resolvedCompanyId] });
-        queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(resolvedCompanyId) });
-      }
-    },
-    onError: (err) => {
-      pushToast({
-        title: "Issue update failed",
-        body: err instanceof Error ? err.message : "Unable to save sub-issue changes",
-        tone: "error",
-      });
-    },
-  });
-  const handleChildIssueUpdate = useCallback((id: string, data: Record<string, unknown>) => {
-    updateChildIssue.mutate({ id, data });
-  }, [updateChildIssue]);
-
   const approvalDecision = useMutation({
     mutationFn: async ({ approvalId, action }: { approvalId: string; action: "approve" | "reject" }) => {
       if (action === "approve") {
@@ -1312,7 +1315,7 @@ export function IssueDetail() {
     mutationFn: ({ body, reopen, interrupt }: { body: string; reopen?: boolean; interrupt?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen, interrupt),
     onMutate: async ({ body, reopen, interrupt }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+      await queryClient.cancelQueries({ queryKey: issueCommentsQueryKey });
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.detail(issueId!) });
 
       const previousIssue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueId!));
@@ -1366,13 +1369,13 @@ export function IssueDetail() {
         }
       }
       queryClient.setQueryData<InfiniteData<IssueComment[], string | null>>(
-        queryKeys.issues.comments(issueId!),
+        issueCommentsQueryKey,
         (current) => current ? {
           ...current,
-          pages: upsertIssueCommentInPages(current.pages, comment),
+          pages: upsertIssueCommentInPages(current.pages, comment, timelineOrder),
         } : {
           pageParams: [null],
-          pages: upsertIssueCommentInPages(undefined, comment),
+          pages: upsertIssueCommentInPages(undefined, comment, timelineOrder),
         },
       );
     },
@@ -1422,7 +1425,7 @@ export function IssueDetail() {
         ...(interrupt ? { interrupt } : {}),
       }),
     onMutate: async ({ body, reopen, reassignment, interrupt }) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+      await queryClient.cancelQueries({ queryKey: issueCommentsQueryKey });
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.detail(issueId!) });
 
       const previousIssue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueId!));
@@ -1480,13 +1483,13 @@ export function IssueDetail() {
       }
       if (comment) {
         queryClient.setQueryData<InfiniteData<IssueComment[], string | null>>(
-          queryKeys.issues.comments(issueId!),
+          issueCommentsQueryKey,
           (current) => current ? {
             ...current,
-            pages: upsertIssueCommentInPages(current.pages, comment),
+            pages: upsertIssueCommentInPages(current.pages, comment, timelineOrder),
           } : {
             pageParams: [null],
-            pages: upsertIssueCommentInPages(undefined, comment),
+            pages: upsertIssueCommentInPages(undefined, comment, timelineOrder),
           },
         );
       }
@@ -2394,33 +2397,13 @@ export function IssueDetail() {
         missingBehavior="placeholder"
       />
 
-      {showRichSubIssuesSection ? (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Sub-issues</h3>
-          </div>
-          <IssuesList
-            issues={childIssues}
-            isLoading={childIssuesLoading}
-            agents={agents}
-            projects={projects}
-            projectId={issue.projectId ?? undefined}
-            viewStateKey={`paperclip:issue-detail:${issue.id}:subissues-view`}
-            issueLinkState={resolvedIssueDetailState ?? location.state}
-            searchFilters={{ parentId: issue.id }}
-            baseCreateIssueDefaults={buildSubIssueDefaultsForViewer(issue, currentUserId)}
-            createIssueLabel="Sub-issue"
-            onUpdateIssue={handleChildIssueUpdate}
-          />
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
-          <Button variant="outline" size="sm" onClick={openNewSubIssue} className="shrink-0 shadow-none">
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            New Sub-issue
-          </Button>
-        </div>
-      )}
+      <IssueRelationsSection
+        issue={issue}
+        childIssues={childIssues}
+        childIssuesLoading={childIssuesLoading}
+        issueLinkState={resolvedIssueDetailState ?? location.state}
+        onAddSubIssue={openNewSubIssue}
+      />
 
       <IssueDocumentsSection
         issue={issue}
@@ -2594,21 +2577,47 @@ export function IssueDetail() {
       <Separator />
 
       <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-3">
-        <TabsList variant="line" className="w-full justify-start gap-1">
-          <TabsTrigger value="chat" className="gap-1.5">
-            <MessageSquare className="h-3.5 w-3.5" />
-            Chat
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="gap-1.5">
-            <ActivityIcon className="h-3.5 w-3.5" />
-            Activity
-          </TabsTrigger>
-          {issuePluginTabItems.map((item) => (
-            <TabsTrigger key={item.value} value={item.value}>
-              {item.label}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TabsList variant="line" className="justify-start gap-1">
+            <TabsTrigger value="chat" className="gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5" />
+              Chat
             </TabsTrigger>
-          ))}
-        </TabsList>
+            <TabsTrigger value="activity" className="gap-1.5">
+              <ActivityIcon className="h-3.5 w-3.5" />
+              Activity
+            </TabsTrigger>
+            {issuePluginTabItems.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs" aria-label="Timeline order">
+            <ArrowDownUp className="ml-1 h-3.5 w-3.5 text-muted-foreground" />
+            {([
+              ["desc", "Newest first"],
+              ["asc", "Oldest first"],
+            ] as const).map(([order, label]) => (
+              <button
+                key={order}
+                type="button"
+                className={cn(
+                  "rounded px-2 py-1 transition-colors",
+                  timelineOrder === order
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => {
+                  setTimelineOrder(order);
+                  saveIssueDetailTimelineOrder(order);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <TabsContent value="chat">
           {detailTab === "chat" ? (
@@ -2622,6 +2631,7 @@ export function IssueDetail() {
               hasOlderComments={hasOlderComments}
               commentsLoadingOlder={commentsLoadingOlder}
               onLoadOlderComments={loadOlderComments}
+              timelineOrder={timelineOrder}
               composerRef={commentComposerRef}
               feedbackVotes={feedbackVotes}
               feedbackDataSharingPreference={feedbackDataSharingPreference}
@@ -2656,6 +2666,7 @@ export function IssueDetail() {
               onApprovalAction={(approvalId, action) => {
                 approvalDecision.mutate({ approvalId, action });
               }}
+              timelineOrder={timelineOrder}
             />
           ) : null}
         </TabsContent>
