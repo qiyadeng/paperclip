@@ -126,6 +126,31 @@ type IssueDetailComment = (IssueComment | OptimisticIssueComment) & {
 const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
 const ISSUE_COMMENT_PAGE_SIZE = 50;
 
+function scrollIssueDetailElementIntoView(targetId: string, attempt = 0) {
+  const target = document.getElementById(targetId);
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  if (attempt >= 8) return;
+  window.setTimeout(() => scrollIssueDetailElementIntoView(targetId, attempt + 1), 50);
+}
+
+function resolveFirstChronologicalCommentId(comments: readonly IssueDetailComment[]) {
+  let first: IssueDetailComment | null = null;
+  for (const comment of comments) {
+    if (!first) {
+      first = comment;
+      continue;
+    }
+    const diff = new Date(comment.createdAt).getTime() - new Date(first.createdAt).getTime();
+    if (diff < 0 || (diff === 0 && comment.id.localeCompare(first.id) < 0)) {
+      first = comment;
+    }
+  }
+  return first?.id ?? null;
+}
+
 function resolveRunningIssueRun(
   activeRun: ActiveRunForIssue | null | undefined,
   liveRuns: readonly LiveRunForIssue[] | undefined,
@@ -1139,6 +1164,15 @@ export function IssueDetail() {
     () => mergeIssueComments(comments ?? [], optimisticComments, timelineOrder),
     [comments, optimisticComments, timelineOrder],
   );
+  const firstCommentId = useMemo(
+    () => resolveFirstChronologicalCommentId(threadComments),
+    [threadComments],
+  );
+  const handleJumpToFirstComment = useCallback(() => {
+    if (!firstCommentId) return;
+    setDetailTab("chat");
+    scrollIssueDetailElementIntoView(`comment-${firstCommentId}`);
+  }, [firstCommentId]);
   const breadcrumbTitle = issue?.title ?? issueId ?? "Issue";
 
   const invalidateIssueDetail = useCallback(() => {
@@ -2593,29 +2627,43 @@ export function IssueDetail() {
               </TabsTrigger>
             ))}
           </TabsList>
-          <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs" aria-label="Timeline order">
-            <ArrowDownUp className="ml-1 h-3.5 w-3.5 text-muted-foreground" />
-            {([
-              ["desc", "Newest first"],
-              ["asc", "Oldest first"],
-            ] as const).map(([order, label]) => (
-              <button
-                key={order}
-                type="button"
-                className={cn(
-                  "rounded px-2 py-1 transition-colors",
-                  timelineOrder === order
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() => {
-                  setTimelineOrder(order);
-                  saveIssueDetailTimelineOrder(order);
-                }}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!firstCommentId}
+              onClick={handleJumpToFirstComment}
+              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+              title={firstCommentId ? "Jump to the first comment" : "No comments yet"}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              First comment
+            </Button>
+            <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs" aria-label="Timeline order">
+              <ArrowDownUp className="ml-1 h-3.5 w-3.5 text-muted-foreground" />
+              {([
+                ["desc", "Newest first"],
+                ["asc", "Oldest first"],
+              ] as const).map(([order, label]) => (
+                <button
+                  key={order}
+                  type="button"
+                  className={cn(
+                    "rounded px-2 py-1 transition-colors",
+                    timelineOrder === order
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => {
+                    setTimelineOrder(order);
+                    saveIssueDetailTimelineOrder(order);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

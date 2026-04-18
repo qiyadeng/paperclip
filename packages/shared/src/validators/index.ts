@@ -17,6 +17,10 @@ export {
 } from "./budget.js";
 
 export {
+  upsertMemoryFileSchema,
+  type UpsertMemoryFile,
+} from "./memory.js";
+export {
   createCompanySchema,
   updateCompanySchema,
   updateCompanyBrandingSchema,

@@ -1,5 +1,11 @@
 export type { Company } from "./company.js";
 export type {
+  MemoryFileScopeType,
+  MemoryFileSummary,
+  MemoryFileDetail,
+  MemoryFileBundle,
+} from "./memory.js";
+export type {
   FeedbackVote,
   FeedbackDataSharingPreference,
   FeedbackTargetType,

@@ -12,6 +12,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Settings, Check, Download, Upload } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
+import { MemoryFileEditor } from "../components/MemoryFileEditor";
 import {
   Field,
   ToggleField,
@@ -246,7 +247,7 @@ export function CompanySettings() {
   }
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-5xl space-y-6">
       <div className="flex items-center gap-2">
         <Settings className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">Company Settings</h1>
@@ -457,6 +458,24 @@ export function CompanySettings() {
             ) : null}
           </div>
         </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Memory
+        </div>
+        <MemoryFileEditor
+          key={selectedCompanyId}
+          title="Company memory"
+          description="Shared company-level memory files. Use these for durable facts, decisions, plans, and notes that should be visible outside one agent's personal memory."
+          defaultFilePath="MEMORY.md"
+          newFilePlaceholder="memory/YYYY-MM-DD.md"
+          bundleQueryKey={queryKeys.companies.memoryBundle(selectedCompanyId!)}
+          fileQueryKey={(path) => queryKeys.companies.memoryFile(selectedCompanyId!, path)}
+          loadBundle={() => companiesApi.memoryBundle(selectedCompanyId!)}
+          loadFile={(path) => companiesApi.memoryFile(selectedCompanyId!, path)}
+          saveFile={(data) => companiesApi.saveMemoryFile(selectedCompanyId!, data)}
+        />
       </div>
 
       {/* Invites */}

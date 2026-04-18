@@ -17,6 +17,7 @@ import {
   type AgentSkillSnapshot,
   type InstanceSchedulerHeartbeatAgent,
   upsertAgentInstructionsFileSchema,
+  upsertMemoryFileSchema,
   updateAgentInstructionsBundleSchema,
   updateAgentPermissionsSchema,
   updateAgentInstructionsPathSchema,
@@ -44,6 +45,7 @@ import {
   syncInstructionsBundleConfigFromFilePath,
   workspaceOperationService,
 } from "../services/index.js";
+import { memoryFileService } from "../services/memory-files.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo } from "./authz.js";
 import {
@@ -123,6 +125,7 @@ export function agentRoutes(db: Db) {
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
   const instructions = agentInstructionsService();
+  const memoryFiles = memoryFileService();
   const companySkills = companySkillService(db);
   const workspaceOperations = workspaceOperationService(db);
   const instanceSettings = instanceSettingsService(db);
@@ -647,6 +650,14 @@ export function agentRoutes(db: Db) {
       throw forbidden(
         "Only board-authenticated callers can manage instructions path or bundle configuration",
       );
+    }
+    await assertBoardCanManageAgentsForCompany(req, targetAgent.companyId);
+  }
+
+  async function assertCanManageAgentMemory(req: Request, targetAgent: { companyId: string }) {
+    assertCompanyAccess(req, targetAgent.companyId);
+    if (req.actor.type !== "board") {
+      throw forbidden("Only board-authenticated callers can manage agent memory files");
     }
     await assertBoardCanManageAgentsForCompany(req, targetAgent.companyId);
   }
@@ -1757,6 +1768,57 @@ export function agentRoutes(db: Db) {
       adapterConfigKey,
       path: pathValue,
     });
+  });
+
+  router.get("/agents/:id/memory", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    await assertCanReadAgent(req, existing);
+    res.json(await memoryFiles.getAgentBundle(existing));
+  });
+
+  router.get("/agents/:id/memory/file", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    await assertCanReadAgent(req, existing);
+    const relativePath = typeof req.query.path === "string" ? req.query.path : "";
+    if (!relativePath.trim()) {
+      res.status(422).json({ error: "Query parameter 'path' is required" });
+      return;
+    }
+    res.json(await memoryFiles.readAgentFile(existing, relativePath));
+  });
+
+  router.put("/agents/:id/memory/file", validate(upsertMemoryFileSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    await assertCanManageAgentMemory(req, existing);
+    const actor = getActorInfo(req);
+    const file = await memoryFiles.writeAgentFile(existing, req.body.path, req.body.content);
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.memory_file_updated",
+      entityType: "agent",
+      entityId: existing.id,
+      details: { path: file.path, size: file.size },
+    });
+    res.json(file);
   });
 
   router.get("/agents/:id/instructions-bundle", async (req, res) => {

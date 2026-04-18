@@ -8,6 +8,8 @@ import type {
   CompanyPortabilityPreviewRequest,
   CompanyPortabilityPreviewResult,
   UpdateCompanyBranding,
+  MemoryFileBundle,
+  MemoryFileDetail,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -41,6 +43,12 @@ export const companiesApi = {
   ) => api.patch<Company>(`/companies/${companyId}`, data),
   updateBranding: (companyId: string, data: UpdateCompanyBranding) =>
     api.patch<Company>(`/companies/${companyId}/branding`, data),
+  memoryBundle: (companyId: string) =>
+    api.get<MemoryFileBundle>(`/companies/${companyId}/memory`),
+  memoryFile: (companyId: string, relativePath: string) =>
+    api.get<MemoryFileDetail>(`/companies/${companyId}/memory/file?path=${encodeURIComponent(relativePath)}`),
+  saveMemoryFile: (companyId: string, data: { path: string; content: string }) =>
+    api.put<MemoryFileDetail>(`/companies/${companyId}/memory/file`, data),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (

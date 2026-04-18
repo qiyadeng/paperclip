@@ -28,6 +28,7 @@ import { adapterLabels, roleLabels, help } from "../components/agent-config-prim
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
 import { MarkdownEditor } from "../components/MarkdownEditor";
+import { MemoryFileEditor } from "../components/MemoryFileEditor";
 import { assetsApi } from "../api/assets";
 import { getUIAdapter, buildTranscript, onAdapterChange } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
@@ -224,10 +225,11 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "runs" | "budget";
+type AgentDetailView = "dashboard" | "instructions" | "memory" | "configuration" | "skills" | "runs" | "budget";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "instructions" || value === "prompts") return "instructions";
+  if (value === "memory") return "memory";
   if (value === "configure" || value === "configuration") return "configuration";
   if (value === "skills") return "skills";
   if (value === "budget") return "budget";
@@ -741,6 +743,8 @@ export function AgentDetail() {
     const canonicalTab =
       activeView === "instructions"
         ? "instructions"
+        : activeView === "memory"
+          ? "memory"
         : activeView === "configuration"
           ? "configuration"
           : activeView === "skills"
@@ -864,6 +868,8 @@ export function AgentDetail() {
         crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
       } else if (activeView === "instructions") {
         crumbs.push({ label: "Instructions" });
+      } else if (activeView === "memory") {
+        crumbs.push({ label: "Memory" });
       } else if (activeView === "configuration") {
         crumbs.push({ label: "Configuration" });
       // } else if (activeView === "skills") { // TODO: bring back later
@@ -1008,6 +1014,7 @@ export function AgentDetail() {
             items={[
               { value: "dashboard", label: "Dashboard" },
               { value: "instructions", label: "Instructions" },
+              { value: "memory", label: "Memory" },
               { value: "skills", label: "Skills" },
               { value: "configuration", label: "Configuration" },
               { value: "runs", label: "Runs" },
@@ -1103,6 +1110,23 @@ export function AgentDetail() {
           onCancelActionChange={setCancelConfigAction}
           onSavingChange={setConfigSaving}
         />
+      )}
+
+      {activeView === "memory" && resolvedCompanyId && (
+        <div className="max-w-5xl">
+          <MemoryFileEditor
+            key={agent.id}
+            title="Agent memory"
+            description="Files in this agent's AGENT_HOME. Use this to inspect and update personal memory such as MEMORY.md, daily notes under memory/, and PARA files under life/."
+            defaultFilePath="MEMORY.md"
+            newFilePlaceholder="memory/YYYY-MM-DD.md"
+            bundleQueryKey={queryKeys.agents.memoryBundle(agent.id)}
+            fileQueryKey={(path) => queryKeys.agents.memoryFile(agent.id, path)}
+            loadBundle={() => agentsApi.memoryBundle(agent.id, resolvedCompanyId)}
+            loadFile={(path) => agentsApi.memoryFile(agent.id, path, resolvedCompanyId)}
+            saveFile={(data) => agentsApi.saveMemoryFile(agent.id, data, resolvedCompanyId)}
+          />
+        </div>
       )}
 
       {activeView === "configuration" && (

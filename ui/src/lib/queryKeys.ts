@@ -3,6 +3,8 @@ export const queryKeys = {
     all: ["companies"] as const,
     detail: (id: string) => ["companies", id] as const,
     stats: ["companies", "stats"] as const,
+    memoryBundle: (id: string) => ["companies", id, "memory"] as const,
+    memoryFile: (id: string, relativePath: string) => ["companies", id, "memory", "file", relativePath] as const,
   },
   companySkills: {
     list: (companyId: string) => ["company-skills", companyId] as const,
@@ -21,6 +23,9 @@ export const queryKeys = {
     instructionsBundle: (id: string) => ["agents", "instructions-bundle", id] as const,
     instructionsFile: (id: string, relativePath: string) =>
       ["agents", "instructions-bundle", id, "file", relativePath] as const,
+    memoryBundle: (id: string) => ["agents", "memory", id] as const,
+    memoryFile: (id: string, relativePath: string) =>
+      ["agents", "memory", id, "file", relativePath] as const,
     keys: (agentId: string) => ["agents", "keys", agentId] as const,
     configRevisions: (agentId: string) => ["agents", "config-revisions", agentId] as const,
     adapterModels: (companyId: string, adapterType: string) =>

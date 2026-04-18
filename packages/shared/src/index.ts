@@ -163,6 +163,10 @@ export {
 
 export type {
   Company,
+  MemoryFileScopeType,
+  MemoryFileSummary,
+  MemoryFileDetail,
+  MemoryFileBundle,
   FeedbackVote,
   FeedbackDataSharingPreference,
   FeedbackTargetType,
@@ -416,6 +420,10 @@ export {
   isClosedIsolatedExecutionWorkspace,
 } from "./execution-workspace-guards.js";
 
+export {
+  upsertMemoryFileSchema,
+  type UpsertMemoryFile,
+} from "./validators/memory.js";
 export {
   instanceGeneralSettingsSchema,
   patchInstanceGeneralSettingsSchema,

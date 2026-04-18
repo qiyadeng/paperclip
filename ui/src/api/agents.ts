@@ -3,6 +3,8 @@ import type {
   AgentDetail,
   AgentInstructionsBundle,
   AgentInstructionsFileDetail,
+  MemoryFileBundle,
+  MemoryFileDetail,
   AgentSkillSnapshot,
   AdapterEnvironmentTestResult,
   AgentKeyCreated,
@@ -119,6 +121,12 @@ export const agentsApi = {
     api.patch<Agent>(agentPath(id, companyId), data),
   updatePermissions: (id: string, data: AgentPermissionUpdate, companyId?: string) =>
     api.patch<AgentDetail>(agentPath(id, companyId, "/permissions"), data),
+  memoryBundle: (id: string, companyId?: string) =>
+    api.get<MemoryFileBundle>(agentPath(id, companyId, "/memory")),
+  memoryFile: (id: string, relativePath: string, companyId?: string) =>
+    api.get<MemoryFileDetail>(agentPath(id, companyId, `/memory/file?path=${encodeURIComponent(relativePath)}`)),
+  saveMemoryFile: (id: string, data: { path: string; content: string }, companyId?: string) =>
+    api.put<MemoryFileDetail>(agentPath(id, companyId, "/memory/file"), data),
   instructionsBundle: (id: string, companyId?: string) =>
     api.get<AgentInstructionsBundle>(agentPath(id, companyId, "/instructions-bundle")),
   updateInstructionsBundle: (
