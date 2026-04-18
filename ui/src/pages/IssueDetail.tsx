@@ -1020,6 +1020,13 @@ export function IssueDetail() {
     placeholderData: keepPreviousDataForSameQueryTail<Issue[]>(issue?.id ?? "pending"),
   });
 
+  const { data: relationIssueOptions = [] } = useQuery({
+    queryKey: resolvedCompanyId ? queryKeys.issues.list(resolvedCompanyId) : ["issues", "pending"],
+    queryFn: () => issuesApi.list(resolvedCompanyId!),
+    enabled: !!resolvedCompanyId && !!issue?.id,
+    placeholderData: keepPreviousDataForSameQueryTail<Issue[]>(resolvedCompanyId ?? "pending"),
+  });
+
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
@@ -1279,11 +1286,14 @@ export function IssueDetail() {
 
       return { previousDetailQueries, previousList, selectedCompanyId };
     },
-    onSuccess: ({ comment: _comment, ...nextIssue }) => {
+    onSuccess: ({ comment: _comment, ...nextIssue }, variables) => {
       const issueRefs = new Set<string>([issueId!, nextIssue.id]);
       if (nextIssue.identifier) issueRefs.add(nextIssue.identifier);
       mergeIssueResponseIntoCaches(issueRefs, nextIssue);
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(issueId!) });
+      if (selectedCompanyId && Object.prototype.hasOwnProperty.call(variables, "parentId")) {
+        queryClient.invalidateQueries({ queryKey: ["issues", selectedCompanyId, "parent"] });
+      }
       invalidateIssueCollections();
     },
     onError: (err, _variables, context) => {
@@ -1309,6 +1319,30 @@ export function IssueDetail() {
   const handleIssuePropertiesUpdate = useCallback((data: Record<string, unknown>) => {
     updateIssue.mutate(data);
   }, [updateIssue.mutate]);
+
+  const linkExistingSubIssue = useMutation({
+    mutationFn: (childIssueId: string) => issuesApi.update(childIssueId, { parentId: issue!.id }),
+    onSuccess: ({ comment: _comment, ...updatedChild }) => {
+      const childRefs = new Set<string>([updatedChild.id]);
+      if (updatedChild.identifier) childRefs.add(updatedChild.identifier);
+      mergeIssueResponseIntoCaches(childRefs, updatedChild);
+      if (resolvedCompanyId && issue?.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.listByParent(resolvedCompanyId, issue.id) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(resolvedCompanyId) });
+        queryClient.invalidateQueries({ queryKey: ["issues", resolvedCompanyId, "parent"] });
+      }
+      queryClient.invalidateQueries({ queryKey: ["issues", "detail"] });
+      invalidateIssueCollections();
+      pushToast({ title: "Sub-issue linked", tone: "success" });
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Unable to link sub-issue",
+        body: err instanceof Error ? err.message : "Unable to update issue relationship",
+        tone: "error",
+      });
+    },
+  });
 
   const approvalDecision = useMutation({
     mutationFn: async ({ approvalId, action }: { approvalId: string; action: "approve" | "reject" }) => {
@@ -2436,7 +2470,11 @@ export function IssueDetail() {
         childIssues={childIssues}
         childIssuesLoading={childIssuesLoading}
         issueLinkState={resolvedIssueDetailState ?? location.state}
+        allIssues={relationIssueOptions}
+        relationUpdatePending={updateIssue.isPending || linkExistingSubIssue.isPending}
         onAddSubIssue={openNewSubIssue}
+        onSetParentIssue={(parentId) => updateIssue.mutate({ parentId })}
+        onLinkExistingSubIssue={(childIssueId) => linkExistingSubIssue.mutate(childIssueId)}
       />
 
       <IssueDocumentsSection
