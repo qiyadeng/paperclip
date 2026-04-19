@@ -771,12 +771,16 @@ export function issueRoutes(
 
     const [{ project, goal }, ancestors, commentCursor, wakeComment, relations, attachments] =
       await Promise.all([
-      resolveIssueProjectAndGoal(issue),
-      svc.getAncestors(issue.id),
-      svc.getCommentCursor(issue.id),
-      wakeCommentId ? svc.getComment(wakeCommentId) : null,
-      svc.getRelationSummaries(issue.id),
-      svc.listAttachments(issue.id),
+        resolveIssueProjectAndGoal(issue),
+        svc.getAncestors(issue.id),
+        svc.getCommentCursor(issue.id),
+        wakeCommentId ? svc.getComment(wakeCommentId) : null,
+        svc.getRelationSummaries(issue.id),
+        svc.listAttachments(issue.id),
+      ]);
+    const [companyDocuments, projectDocuments] = await Promise.all([
+      documentsSvc.listCompanyDocuments(issue.companyId),
+      project ? documentsSvc.listProjectDocuments(project.id) : Promise.resolve([]),
     ]);
 
     res.json({
@@ -833,6 +837,10 @@ export function issueRoutes(
         contentPath: withContentPath(a).contentPath,
         createdAt: a.createdAt,
       })),
+      knowledgeDocuments: {
+        company: companyDocuments,
+        project: projectDocuments,
+      },
     });
   });
 

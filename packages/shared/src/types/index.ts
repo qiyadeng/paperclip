@@ -1,5 +1,11 @@
 export type { Company } from "./company.js";
 export type {
+  DocumentScopeType,
+  ScopedDocumentSummary,
+  ScopedDocument,
+  ScopedDocumentRevision,
+} from "./document.js";
+export type {
   MemoryFileScopeType,
   MemoryFileSummary,
   MemoryFileDetail,

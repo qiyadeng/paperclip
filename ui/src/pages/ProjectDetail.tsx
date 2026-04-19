@@ -24,6 +24,7 @@ import { IssuesList } from "../components/IssuesList";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { ProjectWorkspaceSummaryCard } from "../components/ProjectWorkspaceSummaryCard";
+import { ScopedDocumentsSection } from "../components/ScopedDocumentsSection";
 import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
 import { projectRouteRef } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ import { Loader2 } from "lucide-react";
 
 /* ── Top-level tab types ── */
 
-type ProjectBaseTab = "overview" | "list" | "workspaces" | "configuration" | "budget";
+type ProjectBaseTab = "overview" | "list" | "workspaces" | "documents" | "configuration" | "budget";
 type ProjectPluginTab = `plugin:${string}`;
 type ProjectTab = ProjectBaseTab | ProjectPluginTab;
 
@@ -52,6 +53,7 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "budget") return "budget";
   if (tab === "issues") return "list";
   if (tab === "workspaces") return "workspaces";
+  if (tab === "documents") return "documents";
   return null;
 }
 
@@ -502,6 +504,10 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/budget`, { replace: true });
       return;
     }
+    if (activeTab === "documents") {
+      navigate(`/projects/${canonicalProjectRef}/documents`, { replace: true });
+      return;
+    }
     if (activeTab === "workspaces") {
       navigate(`/projects/${canonicalProjectRef}/workspaces`, { replace: true });
       return;
@@ -635,6 +641,9 @@ export function ProjectDetail() {
     if (cachedTab === "budget") {
       return <Navigate to={`/projects/${canonicalProjectRef}/budget`} replace />;
     }
+    if (cachedTab === "documents") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/documents`} replace />;
+    }
     if (cachedTab === "workspaces" && workspaceTabDecisionLoaded && showWorkspacesTab) {
       return <Navigate to={`/projects/${canonicalProjectRef}/workspaces`} replace />;
     }
@@ -666,6 +675,8 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/workspaces`);
     } else if (tab === "budget") {
       navigate(`/projects/${canonicalProjectRef}/budget`);
+    } else if (tab === "documents") {
+      navigate(`/projects/${canonicalProjectRef}/documents`);
     } else if (tab === "configuration") {
       navigate(`/projects/${canonicalProjectRef}/configuration`);
     } else {
@@ -735,6 +746,7 @@ export function ProjectDetail() {
             { value: "list", label: "Issues" },
             { value: "overview", label: "Overview" },
             ...(showWorkspacesTab ? [{ value: "workspaces", label: "Workspaces" }] : []),
+            { value: "documents", label: "Documents" },
             { value: "configuration", label: "Configuration" },
             { value: "budget", label: "Budget" },
             ...pluginTabItems.map((item) => ({
@@ -778,6 +790,21 @@ export function ProjectDetail() {
         ) : (
           <p className="text-sm text-muted-foreground">Loading workspaces...</p>
         )
+      ) : null}
+
+
+      {activeTab === "documents" && project?.id && resolvedCompanyId ? (
+        <div className="max-w-5xl">
+          <ScopedDocumentsSection
+            title="Project documents"
+            description="Shared project-level knowledge for agents working on this project. Use these for architecture, APIs, testing notes, and durable project context."
+            documentsQueryKey={queryKeys.projects.documents(project.id)}
+            loadDocuments={() => projectsApi.documents(project.id, resolvedCompanyId)}
+            saveDocument={(key, data) => projectsApi.saveDocument(project.id, key, data, resolvedCompanyId)}
+            deleteDocument={(key) => projectsApi.deleteDocument(project.id, key, resolvedCompanyId)}
+            emptyLabel="No project documents yet. Add architecture notes, API contracts, or project-specific operating context here."
+          />
+        </div>
       ) : null}
 
       {activeTab === "configuration" && (

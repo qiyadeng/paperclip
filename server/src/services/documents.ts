@@ -1,6 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { documentRevisions, documents, issueDocuments, issues } from "@paperclipai/db";
+import { companyDocuments, documentRevisions, documents, issueDocuments, issues, projectDocuments, projects } from "@paperclipai/db";
 import { issueDocumentKeySchema } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
@@ -82,7 +82,246 @@ const issueDocumentSelect = {
   updatedAt: documents.updatedAt,
 };
 
+const companyDocumentSelect = {
+  id: documents.id,
+  companyId: documents.companyId,
+  scopeId: companyDocuments.companyId,
+  key: companyDocuments.key,
+  title: documents.title,
+  format: documents.format,
+  latestBody: documents.latestBody,
+  latestRevisionId: documents.latestRevisionId,
+  latestRevisionNumber: documents.latestRevisionNumber,
+  createdByAgentId: documents.createdByAgentId,
+  createdByUserId: documents.createdByUserId,
+  updatedByAgentId: documents.updatedByAgentId,
+  updatedByUserId: documents.updatedByUserId,
+  createdAt: documents.createdAt,
+  updatedAt: documents.updatedAt,
+};
+
+const projectDocumentSelect = {
+  id: documents.id,
+  companyId: documents.companyId,
+  scopeId: projectDocuments.projectId,
+  key: projectDocuments.key,
+  title: documents.title,
+  format: documents.format,
+  latestBody: documents.latestBody,
+  latestRevisionId: documents.latestRevisionId,
+  latestRevisionNumber: documents.latestRevisionNumber,
+  createdByAgentId: documents.createdByAgentId,
+  createdByUserId: documents.createdByUserId,
+  updatedByAgentId: documents.updatedByAgentId,
+  updatedByUserId: documents.updatedByUserId,
+  createdAt: documents.createdAt,
+  updatedAt: documents.updatedAt,
+};
+
+function mapScopedDocumentRow(
+  row: {
+    id: string;
+    companyId: string;
+    scopeId: string;
+    key: string;
+    title: string | null;
+    format: string;
+    latestBody: string;
+    latestRevisionId: string | null;
+    latestRevisionNumber: number;
+    createdByAgentId: string | null;
+    createdByUserId: string | null;
+    updatedByAgentId: string | null;
+    updatedByUserId: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  scopeType: "company" | "project",
+  includeBody: boolean,
+) {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    scopeType,
+    scopeId: row.scopeId,
+    key: row.key,
+    title: row.title,
+    format: row.format,
+    ...(includeBody ? { body: row.latestBody } : {}),
+    latestRevisionId: row.latestRevisionId ?? null,
+    latestRevisionNumber: row.latestRevisionNumber,
+    createdByAgentId: row.createdByAgentId,
+    createdByUserId: row.createdByUserId,
+    updatedByAgentId: row.updatedByAgentId,
+    updatedByUserId: row.updatedByUserId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export function documentService(db: Db) {
+  async function upsertScopedDocument(input: {
+    scopeType: "company" | "project";
+    scopeId: string;
+    companyId: string;
+    key: string;
+    title?: string | null;
+    format: string;
+    body: string;
+    changeSummary?: string | null;
+    baseRevisionId?: string | null;
+    createdByAgentId?: string | null;
+    createdByUserId?: string | null;
+    createdByRunId?: string | null;
+    getExisting: (tx: any, key: string) => Promise<ReturnType<typeof mapScopedDocumentRow> | null>;
+    touchLink: (tx: any, documentId: string, now: Date) => Promise<unknown>;
+    insertLink: (tx: any, documentId: string, key: string, now: Date) => Promise<unknown>;
+    conflictMessage: string;
+  }) {
+    const key = normalizeDocumentKey(input.key);
+    try {
+      return await db.transaction(async (tx) => {
+        const now = new Date();
+        const existing = await input.getExisting(tx, key);
+
+        if (existing) {
+          if (!input.baseRevisionId) {
+            throw conflict("Document update requires baseRevisionId", {
+              currentRevisionId: existing.latestRevisionId,
+            });
+          }
+          if (input.baseRevisionId !== existing.latestRevisionId) {
+            throw conflict("Document was updated by someone else", {
+              currentRevisionId: existing.latestRevisionId,
+            });
+          }
+
+          const nextRevisionNumber = existing.latestRevisionNumber + 1;
+          const [revision] = await tx
+            .insert(documentRevisions)
+            .values({
+              companyId: input.companyId,
+              documentId: existing.id,
+              revisionNumber: nextRevisionNumber,
+              title: input.title ?? null,
+              format: input.format,
+              body: input.body,
+              changeSummary: input.changeSummary ?? null,
+              createdByAgentId: input.createdByAgentId ?? null,
+              createdByUserId: input.createdByUserId ?? null,
+              createdByRunId: input.createdByRunId ?? null,
+              createdAt: now,
+            })
+            .returning();
+
+          await tx
+            .update(documents)
+            .set({
+              title: input.title ?? null,
+              format: input.format,
+              latestBody: input.body,
+              latestRevisionId: revision.id,
+              latestRevisionNumber: nextRevisionNumber,
+              updatedByAgentId: input.createdByAgentId ?? null,
+              updatedByUserId: input.createdByUserId ?? null,
+              updatedAt: now,
+            })
+            .where(eq(documents.id, existing.id));
+
+          await input.touchLink(tx, existing.id, now);
+
+          return {
+            created: false as const,
+            document: {
+              ...existing,
+              title: input.title ?? null,
+              format: input.format,
+              body: input.body,
+              latestRevisionId: revision.id,
+              latestRevisionNumber: nextRevisionNumber,
+              updatedByAgentId: input.createdByAgentId ?? null,
+              updatedByUserId: input.createdByUserId ?? null,
+              updatedAt: now,
+            },
+          };
+        }
+
+        if (input.baseRevisionId) {
+          throw conflict("Document does not exist yet", { key });
+        }
+
+        const [document] = await tx
+          .insert(documents)
+          .values({
+            companyId: input.companyId,
+            title: input.title ?? null,
+            format: input.format,
+            latestBody: input.body,
+            latestRevisionId: null,
+            latestRevisionNumber: 1,
+            createdByAgentId: input.createdByAgentId ?? null,
+            createdByUserId: input.createdByUserId ?? null,
+            updatedByAgentId: input.createdByAgentId ?? null,
+            updatedByUserId: input.createdByUserId ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+
+        const [revision] = await tx
+          .insert(documentRevisions)
+          .values({
+            companyId: input.companyId,
+            documentId: document.id,
+            revisionNumber: 1,
+            title: input.title ?? null,
+            format: input.format,
+            body: input.body,
+            changeSummary: input.changeSummary ?? null,
+            createdByAgentId: input.createdByAgentId ?? null,
+            createdByUserId: input.createdByUserId ?? null,
+            createdByRunId: input.createdByRunId ?? null,
+            createdAt: now,
+          })
+          .returning();
+
+        await tx
+          .update(documents)
+          .set({ latestRevisionId: revision.id })
+          .where(eq(documents.id, document.id));
+
+        await input.insertLink(tx, document.id, key, now);
+
+        return {
+          created: true as const,
+          document: {
+            id: document.id,
+            companyId: input.companyId,
+            scopeType: input.scopeType,
+            scopeId: input.scopeId,
+            key,
+            title: document.title,
+            format: document.format,
+            body: document.latestBody,
+            latestRevisionId: revision.id,
+            latestRevisionNumber: 1,
+            createdByAgentId: document.createdByAgentId,
+            createdByUserId: document.createdByUserId,
+            updatedByAgentId: document.updatedByAgentId,
+            updatedByUserId: document.updatedByUserId,
+            createdAt: document.createdAt,
+            updatedAt: document.updatedAt,
+          },
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw conflict(input.conflictMessage, { key });
+      }
+      throw error;
+    }
+  }
+
   return {
     getIssueDocumentPayload: async (issue: { id: string; description: string | null }) => {
       const [planDocument, documentSummaries] = await Promise.all([
@@ -468,6 +707,219 @@ export function documentService(db: Db) {
           body: existing.latestBody,
           latestRevisionId: existing.latestRevisionId ?? null,
         };
+      });
+    },
+
+
+    listCompanyDocuments: async (companyId: string) => {
+      const rows = await db
+        .select(companyDocumentSelect)
+        .from(companyDocuments)
+        .innerJoin(documents, eq(companyDocuments.documentId, documents.id))
+        .where(eq(companyDocuments.companyId, companyId))
+        .orderBy(asc(companyDocuments.key), desc(documents.updatedAt));
+      return rows.map((row) => mapScopedDocumentRow(row, "company", true));
+    },
+
+    getCompanyDocumentByKey: async (companyId: string, rawKey: string) => {
+      const key = normalizeDocumentKey(rawKey);
+      const row = await db
+        .select(companyDocumentSelect)
+        .from(companyDocuments)
+        .innerJoin(documents, eq(companyDocuments.documentId, documents.id))
+        .where(and(eq(companyDocuments.companyId, companyId), eq(companyDocuments.key, key)))
+        .then((rows) => rows[0] ?? null);
+      return row ? mapScopedDocumentRow(row, "company", true) : null;
+    },
+
+    listCompanyDocumentRevisions: async (companyId: string, rawKey: string) => {
+      const key = normalizeDocumentKey(rawKey);
+      return db
+        .select({
+          id: documentRevisions.id,
+          companyId: documentRevisions.companyId,
+          documentId: documentRevisions.documentId,
+          scopeId: companyDocuments.companyId,
+          key: companyDocuments.key,
+          revisionNumber: documentRevisions.revisionNumber,
+          title: documentRevisions.title,
+          format: documentRevisions.format,
+          body: documentRevisions.body,
+          changeSummary: documentRevisions.changeSummary,
+          createdByAgentId: documentRevisions.createdByAgentId,
+          createdByUserId: documentRevisions.createdByUserId,
+          createdAt: documentRevisions.createdAt,
+        })
+        .from(companyDocuments)
+        .innerJoin(documents, eq(companyDocuments.documentId, documents.id))
+        .innerJoin(documentRevisions, eq(documentRevisions.documentId, documents.id))
+        .where(and(eq(companyDocuments.companyId, companyId), eq(companyDocuments.key, key)))
+        .orderBy(desc(documentRevisions.revisionNumber))
+        .then((rows) => rows.map((row) => ({ ...row, scopeType: "company" as const })));
+    },
+
+    upsertCompanyDocument: async (input: {
+      companyId: string;
+      key: string;
+      title?: string | null;
+      format: string;
+      body: string;
+      changeSummary?: string | null;
+      baseRevisionId?: string | null;
+      createdByAgentId?: string | null;
+      createdByUserId?: string | null;
+      createdByRunId?: string | null;
+    }) => upsertScopedDocument({
+      ...input,
+      scopeType: "company",
+      scopeId: input.companyId,
+      conflictMessage: "Document key already exists on this company",
+      getExisting: async (tx, key) => {
+        const row = await tx
+          .select(companyDocumentSelect)
+          .from(companyDocuments)
+          .innerJoin(documents, eq(companyDocuments.documentId, documents.id))
+          .where(and(eq(companyDocuments.companyId, input.companyId), eq(companyDocuments.key, key)))
+          .then((rows: any[]) => rows[0] ?? null);
+        return row ? mapScopedDocumentRow(row, "company", true) : null;
+      },
+      touchLink: (tx, documentId, now) => tx
+        .update(companyDocuments)
+        .set({ updatedAt: now })
+        .where(eq(companyDocuments.documentId, documentId)),
+      insertLink: (tx, documentId, key, now) => tx.insert(companyDocuments).values({
+        companyId: input.companyId,
+        documentId,
+        key,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    }),
+
+    deleteCompanyDocument: async (companyId: string, rawKey: string) => {
+      const key = normalizeDocumentKey(rawKey);
+      return db.transaction(async (tx) => {
+        const existing = await tx
+          .select(companyDocumentSelect)
+          .from(companyDocuments)
+          .innerJoin(documents, eq(companyDocuments.documentId, documents.id))
+          .where(and(eq(companyDocuments.companyId, companyId), eq(companyDocuments.key, key)))
+          .then((rows) => rows[0] ?? null);
+        if (!existing) return null;
+        await tx.delete(companyDocuments).where(eq(companyDocuments.documentId, existing.id));
+        await tx.delete(documents).where(eq(documents.id, existing.id));
+        return mapScopedDocumentRow(existing, "company", true);
+      });
+    },
+
+    listProjectDocuments: async (projectId: string) => {
+      const rows = await db
+        .select(projectDocumentSelect)
+        .from(projectDocuments)
+        .innerJoin(documents, eq(projectDocuments.documentId, documents.id))
+        .where(eq(projectDocuments.projectId, projectId))
+        .orderBy(asc(projectDocuments.key), desc(documents.updatedAt));
+      return rows.map((row) => mapScopedDocumentRow(row, "project", true));
+    },
+
+    getProjectDocumentByKey: async (projectId: string, rawKey: string) => {
+      const key = normalizeDocumentKey(rawKey);
+      const row = await db
+        .select(projectDocumentSelect)
+        .from(projectDocuments)
+        .innerJoin(documents, eq(projectDocuments.documentId, documents.id))
+        .where(and(eq(projectDocuments.projectId, projectId), eq(projectDocuments.key, key)))
+        .then((rows) => rows[0] ?? null);
+      return row ? mapScopedDocumentRow(row, "project", true) : null;
+    },
+
+    listProjectDocumentRevisions: async (projectId: string, rawKey: string) => {
+      const key = normalizeDocumentKey(rawKey);
+      return db
+        .select({
+          id: documentRevisions.id,
+          companyId: documentRevisions.companyId,
+          documentId: documentRevisions.documentId,
+          scopeId: projectDocuments.projectId,
+          key: projectDocuments.key,
+          revisionNumber: documentRevisions.revisionNumber,
+          title: documentRevisions.title,
+          format: documentRevisions.format,
+          body: documentRevisions.body,
+          changeSummary: documentRevisions.changeSummary,
+          createdByAgentId: documentRevisions.createdByAgentId,
+          createdByUserId: documentRevisions.createdByUserId,
+          createdAt: documentRevisions.createdAt,
+        })
+        .from(projectDocuments)
+        .innerJoin(documents, eq(projectDocuments.documentId, documents.id))
+        .innerJoin(documentRevisions, eq(documentRevisions.documentId, documents.id))
+        .where(and(eq(projectDocuments.projectId, projectId), eq(projectDocuments.key, key)))
+        .orderBy(desc(documentRevisions.revisionNumber))
+        .then((rows) => rows.map((row) => ({ ...row, scopeType: "project" as const })));
+    },
+
+    upsertProjectDocument: async (input: {
+      projectId: string;
+      key: string;
+      title?: string | null;
+      format: string;
+      body: string;
+      changeSummary?: string | null;
+      baseRevisionId?: string | null;
+      createdByAgentId?: string | null;
+      createdByUserId?: string | null;
+      createdByRunId?: string | null;
+    }) => {
+      const project = await db
+        .select({ id: projects.id, companyId: projects.companyId })
+        .from(projects)
+        .where(eq(projects.id, input.projectId))
+        .then((rows) => rows[0] ?? null);
+      if (!project) throw notFound("Project not found");
+      return upsertScopedDocument({
+        ...input,
+        companyId: project.companyId,
+        scopeType: "project",
+        scopeId: project.id,
+        conflictMessage: "Document key already exists on this project",
+        getExisting: async (tx, key) => {
+          const row = await tx
+            .select(projectDocumentSelect)
+            .from(projectDocuments)
+            .innerJoin(documents, eq(projectDocuments.documentId, documents.id))
+            .where(and(eq(projectDocuments.projectId, project.id), eq(projectDocuments.key, key)))
+            .then((rows: any[]) => rows[0] ?? null);
+          return row ? mapScopedDocumentRow(row, "project", true) : null;
+        },
+        touchLink: (tx, documentId, now) => tx
+          .update(projectDocuments)
+          .set({ updatedAt: now })
+          .where(eq(projectDocuments.documentId, documentId)),
+        insertLink: (tx, documentId, key, now) => tx.insert(projectDocuments).values({
+          companyId: project.companyId,
+          projectId: project.id,
+          documentId,
+          key,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      });
+    },
+
+    deleteProjectDocument: async (projectId: string, rawKey: string) => {
+      const key = normalizeDocumentKey(rawKey);
+      return db.transaction(async (tx) => {
+        const existing = await tx
+          .select(projectDocumentSelect)
+          .from(projectDocuments)
+          .innerJoin(documents, eq(projectDocuments.documentId, documents.id))
+          .where(and(eq(projectDocuments.projectId, projectId), eq(projectDocuments.key, key)))
+          .then((rows) => rows[0] ?? null);
+        if (!existing) return null;
+        await tx.delete(projectDocuments).where(eq(projectDocuments.documentId, existing.id));
+        await tx.delete(documents).where(eq(documents.id, existing.id));
+        return mapScopedDocumentRow(existing, "project", true);
       });
     },
   };

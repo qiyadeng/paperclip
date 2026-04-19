@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Settings, Check, Download, Upload } from "lucide-react";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
 import { MemoryFileEditor } from "../components/MemoryFileEditor";
+import { ScopedDocumentsSection } from "../components/ScopedDocumentsSection";
 import {
   Field,
   ToggleField,
@@ -458,6 +459,23 @@ export function CompanySettings() {
             ) : null}
           </div>
         </div>
+      </div>
+
+
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Documents
+        </div>
+        <ScopedDocumentsSection
+          key={`${selectedCompanyId}-documents`}
+          title="Company documents"
+          description="Shared company-level knowledge documents. Agents in this company can read these through the API and use them as durable context."
+          documentsQueryKey={queryKeys.companies.documents(selectedCompanyId!)}
+          loadDocuments={() => companiesApi.documents(selectedCompanyId!)}
+          saveDocument={(key, data) => companiesApi.saveDocument(selectedCompanyId!, key, data)}
+          deleteDocument={(key) => companiesApi.deleteDocument(selectedCompanyId!, key)}
+          emptyLabel="No company documents yet. Add product context, architecture notes, or operating procedures here."
+        />
       </div>
 
       <div className="space-y-4">

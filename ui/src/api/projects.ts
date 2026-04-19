@@ -1,6 +1,8 @@
 import type {
   Project,
   ProjectWorkspace,
+  ScopedDocument,
+  ScopedDocumentRevision,
   WorkspaceOperation,
   WorkspaceRuntimeControlTarget,
 } from "@paperclipai/shared";
@@ -57,5 +59,15 @@ export const projectsApi = {
     ),
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
+  documents: (projectId: string, companyId?: string) =>
+    api.get<ScopedDocument[]>(projectPath(projectId, companyId, "/documents")),
+  document: (projectId: string, key: string, companyId?: string) =>
+    api.get<ScopedDocument>(projectPath(projectId, companyId, `/documents/${encodeURIComponent(key)}`)),
+  saveDocument: (projectId: string, key: string, data: { title?: string | null; format: "markdown"; body: string; changeSummary?: string | null; baseRevisionId?: string | null }, companyId?: string) =>
+    api.put<ScopedDocument>(projectPath(projectId, companyId, `/documents/${encodeURIComponent(key)}`), data),
+  documentRevisions: (projectId: string, key: string, companyId?: string) =>
+    api.get<ScopedDocumentRevision[]>(projectPath(projectId, companyId, `/documents/${encodeURIComponent(key)}/revisions`)),
+  deleteDocument: (projectId: string, key: string, companyId?: string) =>
+    api.delete<ScopedDocument>(projectPath(projectId, companyId, `/documents/${encodeURIComponent(key)}`)),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
 };

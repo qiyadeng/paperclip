@@ -5,6 +5,8 @@ export const queryKeys = {
     stats: ["companies", "stats"] as const,
     memoryBundle: (id: string) => ["companies", id, "memory"] as const,
     memoryFile: (id: string, relativePath: string) => ["companies", id, "memory", "file", relativePath] as const,
+    documents: (id: string) => ["companies", id, "documents"] as const,
+    documentRevisions: (id: string, key: string) => ["companies", id, "document-revisions", key] as const,
   },
   companySkills: {
     list: (companyId: string) => ["company-skills", companyId] as const,
@@ -79,6 +81,8 @@ export const queryKeys = {
   projects: {
     list: (companyId: string) => ["projects", companyId] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+    documents: (id: string) => ["projects", id, "documents"] as const,
+    documentRevisions: (id: string, key: string) => ["projects", id, "document-revisions", key] as const,
   },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,

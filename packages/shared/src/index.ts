@@ -163,6 +163,10 @@ export {
 
 export type {
   Company,
+  DocumentScopeType,
+  ScopedDocumentSummary,
+  ScopedDocument,
+  ScopedDocumentRevision,
   MemoryFileScopeType,
   MemoryFileSummary,
   MemoryFileDetail,

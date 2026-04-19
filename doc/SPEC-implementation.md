@@ -335,9 +335,9 @@ Operational policy:
   - `asset_id` uuid fk not null
   - `issue_comment_id` uuid fk null
 
-## 7.15 `documents` + `document_revisions` + `issue_documents`
+## 7.15 `documents` + `document_revisions` + scoped document links
 
-- `documents` stores editable text-first documents:
+- `documents` stores editable text-first documents. Documents are first-class company-scoped records and can be linked to company, project, or issue scopes:
   - `id` uuid pk
   - `company_id` uuid fk not null
   - `title` text null
@@ -362,6 +362,17 @@ Operational policy:
   - `issue_id` uuid fk not null
   - `document_id` uuid fk not null
   - `key` text not null (`plan`, `design`, `notes`, etc.)
+- `company_documents` links documents to company-wide knowledge with a stable key:
+  - `id` uuid pk
+  - `company_id` uuid fk not null
+  - `document_id` uuid fk not null
+  - `key` text not null (`handbook`, `architecture`, `runbook`, etc.)
+- `project_documents` links documents to project-specific knowledge with a stable key:
+  - `id` uuid pk
+  - `company_id` uuid fk not null
+  - `project_id` uuid fk not null
+  - `document_id` uuid fk not null
+  - `key` text not null (`architecture`, `api`, `testing`, etc.)
 
 ## 8. State Machines
 
@@ -482,6 +493,19 @@ All endpoints are under `/api` and return JSON.
 - `PUT /issues/:issueId/documents/:key`
 - `GET /issues/:issueId/documents/:key/revisions`
 - `DELETE /issues/:issueId/documents/:key`
+
+Company/project knowledge documents:
+
+- `GET /companies/:companyId/documents`
+- `GET /companies/:companyId/documents/:key`
+- `PUT /companies/:companyId/documents/:key`
+- `GET /companies/:companyId/documents/:key/revisions`
+- `DELETE /companies/:companyId/documents/:key`
+- `GET /projects/:projectId/documents`
+- `GET /projects/:projectId/documents/:key`
+- `PUT /projects/:projectId/documents/:key`
+- `GET /projects/:projectId/documents/:key/revisions`
+- `DELETE /projects/:projectId/documents/:key`
 - `POST /issues/:issueId/checkout`
 - `POST /issues/:issueId/release`
 - `POST /issues/:issueId/comments`

@@ -10,6 +10,8 @@ import type {
   UpdateCompanyBranding,
   MemoryFileBundle,
   MemoryFileDetail,
+  ScopedDocument,
+  ScopedDocumentRevision,
 } from "@paperclipai/shared";
 import { api } from "./client";
 
@@ -49,6 +51,16 @@ export const companiesApi = {
     api.get<MemoryFileDetail>(`/companies/${companyId}/memory/file?path=${encodeURIComponent(relativePath)}`),
   saveMemoryFile: (companyId: string, data: { path: string; content: string }) =>
     api.put<MemoryFileDetail>(`/companies/${companyId}/memory/file`, data),
+  documents: (companyId: string) =>
+    api.get<ScopedDocument[]>(`/companies/${companyId}/documents`),
+  document: (companyId: string, key: string) =>
+    api.get<ScopedDocument>(`/companies/${companyId}/documents/${encodeURIComponent(key)}`),
+  saveDocument: (companyId: string, key: string, data: { title?: string | null; format: "markdown"; body: string; changeSummary?: string | null; baseRevisionId?: string | null }) =>
+    api.put<ScopedDocument>(`/companies/${companyId}/documents/${encodeURIComponent(key)}`, data),
+  documentRevisions: (companyId: string, key: string) =>
+    api.get<ScopedDocumentRevision[]>(`/companies/${companyId}/documents/${encodeURIComponent(key)}/revisions`),
+  deleteDocument: (companyId: string, key: string) =>
+    api.delete<ScopedDocument>(`/companies/${companyId}/documents/${encodeURIComponent(key)}`),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (

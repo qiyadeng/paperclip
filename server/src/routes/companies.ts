@@ -11,6 +11,8 @@ import {
   feedbackVoteValueSchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
+  issueDocumentKeySchema,
+  upsertIssueDocumentSchema,
   upsertMemoryFileSchema,
 } from "@paperclipai/shared";
 import { badRequest, forbidden } from "../errors.js";
@@ -23,6 +25,7 @@ import {
   companyService,
   feedbackService,
   logActivity,
+  documentService,
 } from "../services/index.js";
 import { memoryFileService } from "../services/memory-files.js";
 import type { StorageService } from "../storage/types.js";
@@ -135,6 +138,134 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       return;
     }
     res.json(company);
+  });
+
+
+  router.get("/:companyId/documents", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(await documentService(db).listCompanyDocuments(companyId));
+  });
+
+  router.get("/:companyId/documents/:key", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    const keyParsed = issueDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
+    if (!keyParsed.success) {
+      res.status(400).json({ error: "Invalid document key", details: keyParsed.error.issues });
+      return;
+    }
+    const doc = await documentService(db).getCompanyDocumentByKey(companyId, keyParsed.data);
+    if (!doc) {
+      res.status(404).json({ error: "Document not found" });
+      return;
+    }
+    res.json(doc);
+  });
+
+  router.put("/:companyId/documents/:key", validate(upsertIssueDocumentSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    const keyParsed = issueDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
+    if (!keyParsed.success) {
+      res.status(400).json({ error: "Invalid document key", details: keyParsed.error.issues });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const result = await documentService(db).upsertCompanyDocument({
+      companyId,
+      key: keyParsed.data,
+      title: req.body.title ?? null,
+      format: req.body.format,
+      body: req.body.body,
+      changeSummary: req.body.changeSummary ?? null,
+      baseRevisionId: req.body.baseRevisionId ?? null,
+      createdByAgentId: actor.agentId ?? null,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      createdByRunId: actor.runId ?? null,
+    });
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: result.created ? "company.document_created" : "company.document_updated",
+      entityType: "company",
+      entityId: companyId,
+      details: {
+        key: result.document.key,
+        documentId: result.document.id,
+        title: result.document.title,
+        revisionNumber: result.document.latestRevisionNumber,
+      },
+    });
+    res.status(result.created ? 201 : 200).json(result.document);
+  });
+
+  router.get("/:companyId/documents/:key/revisions", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    const keyParsed = issueDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
+    if (!keyParsed.success) {
+      res.status(400).json({ error: "Invalid document key", details: keyParsed.error.issues });
+      return;
+    }
+    res.json(await documentService(db).listCompanyDocumentRevisions(companyId, keyParsed.data));
+  });
+
+  router.delete("/:companyId/documents/:key", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    assertBoard(req);
+    const company = await svc.getById(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    const keyParsed = issueDocumentKeySchema.safeParse(String(req.params.key ?? "").trim().toLowerCase());
+    if (!keyParsed.success) {
+      res.status(400).json({ error: "Invalid document key", details: keyParsed.error.issues });
+      return;
+    }
+    const removed = await documentService(db).deleteCompanyDocument(companyId, keyParsed.data);
+    if (!removed) {
+      res.status(404).json({ error: "Document not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "company.document_deleted",
+      entityType: "company",
+      entityId: companyId,
+      details: { key: removed.key, documentId: removed.id, title: removed.title },
+    });
+    res.json(removed);
   });
 
   router.get("/:companyId/memory", async (req, res) => {
