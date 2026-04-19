@@ -129,26 +129,11 @@ const ISSUE_COMMENT_PAGE_SIZE = 50;
 function scrollIssueDetailElementIntoView(targetId: string, attempt = 0) {
   const target = document.getElementById(targetId);
   if (target) {
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
   if (attempt >= 8) return;
   window.setTimeout(() => scrollIssueDetailElementIntoView(targetId, attempt + 1), 50);
-}
-
-function resolveFirstChronologicalCommentId(comments: readonly IssueDetailComment[]) {
-  let first: IssueDetailComment | null = null;
-  for (const comment of comments) {
-    if (!first) {
-      first = comment;
-      continue;
-    }
-    const diff = new Date(comment.createdAt).getTime() - new Date(first.createdAt).getTime();
-    if (diff < 0 || (diff === 0 && comment.id.localeCompare(first.id) < 0)) {
-      first = comment;
-    }
-  }
-  return first?.id ?? null;
 }
 
 function resolveRunningIssueRun(
@@ -1171,15 +1156,21 @@ export function IssueDetail() {
     () => mergeIssueComments(comments ?? [], optimisticComments, timelineOrder),
     [comments, optimisticComments, timelineOrder],
   );
-  const firstCommentId = useMemo(
-    () => resolveFirstChronologicalCommentId(threadComments),
-    [threadComments],
+  const hasIssueDocuments = Boolean(
+    issue?.planDocument ||
+    issue?.legacyPlanDocument ||
+    (issue?.documentSummaries?.length ?? 0) > 0,
   );
-  const handleJumpToFirstComment = useCallback(() => {
-    if (!firstCommentId) return;
+  const handleJumpToIssueStart = useCallback(() => {
+    scrollIssueDetailElementIntoView("issue-detail-start");
+  }, []);
+  const handleJumpToIssueDocuments = useCallback(() => {
+    scrollIssueDetailElementIntoView("issue-detail-documents");
+  }, []);
+  const handleJumpToIssueComments = useCallback(() => {
     setDetailTab("chat");
-    scrollIssueDetailElementIntoView(`comment-${firstCommentId}`);
-  }, [firstCommentId]);
+    window.setTimeout(() => scrollIssueDetailElementIntoView("issue-detail-comments"), 0);
+  }, []);
   const breadcrumbTitle = issue?.title ?? issueId ?? "Issue";
 
   const invalidateIssueDetail = useCallback(() => {
@@ -2263,7 +2254,43 @@ export function IssueDetail() {
         </div>
       )}
 
-      <div className="space-y-3">
+      <nav
+        aria-label="Issue sections"
+        className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-1 border-b border-border/60 bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      >
+        <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Jump to</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleJumpToIssueStart}
+          className="h-7 px-2 text-xs"
+        >
+          Issue
+        </Button>
+        {hasIssueDocuments ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleJumpToIssueDocuments}
+            className="h-7 px-2 text-xs"
+          >
+            Documents
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleJumpToIssueComments}
+          className="h-7 px-2 text-xs"
+        >
+          Comments
+        </Button>
+      </nav>
+
+      <div id="issue-detail-start" className="scroll-mt-16 space-y-3">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <StatusIcon
             status={issue.status}
@@ -2477,29 +2504,31 @@ export function IssueDetail() {
         onLinkExistingSubIssue={(childIssueId) => linkExistingSubIssue.mutate(childIssueId)}
       />
 
-      <IssueDocumentsSection
-        issue={issue}
-        canDeleteDocuments={Boolean(session?.user?.id)}
-        feedbackVotes={feedbackVotes}
-        feedbackDataSharingPreference={feedbackDataSharingPreference}
-        feedbackTermsUrl={FEEDBACK_TERMS_URL}
-        mentions={mentionOptions}
-        imageUploadHandler={async (file) => {
-          const attachment = await uploadAttachment.mutateAsync(file);
-          return attachment.contentPath;
-        }}
-        onVote={async (revisionId, vote, options) => {
-          await feedbackVoteMutation.mutateAsync({
-            targetType: "issue_document_revision",
-            targetId: revisionId,
-            vote,
-            reason: options?.reason,
-            allowSharing: options?.allowSharing,
-            sharingPreferenceAtSubmit: feedbackDataSharingPreference,
-          });
-        }}
-        extraActions={!hasAttachments ? attachmentUploadButton : null}
-      />
+      <div id="issue-detail-documents" className="scroll-mt-16">
+        <IssueDocumentsSection
+          issue={issue}
+          canDeleteDocuments={Boolean(session?.user?.id)}
+          feedbackVotes={feedbackVotes}
+          feedbackDataSharingPreference={feedbackDataSharingPreference}
+          feedbackTermsUrl={FEEDBACK_TERMS_URL}
+          mentions={mentionOptions}
+          imageUploadHandler={async (file) => {
+            const attachment = await uploadAttachment.mutateAsync(file);
+            return attachment.contentPath;
+          }}
+          onVote={async (revisionId, vote, options) => {
+            await feedbackVoteMutation.mutateAsync({
+              targetType: "issue_document_revision",
+              targetId: revisionId,
+              vote,
+              reason: options?.reason,
+              allowSharing: options?.allowSharing,
+              sharingPreferenceAtSubmit: feedbackDataSharingPreference,
+            });
+          }}
+          extraActions={!hasAttachments ? attachmentUploadButton : null}
+        />
+      </div>
 
       {attachmentsInitialLoading ? (
         <IssueSectionSkeleton titleWidth="w-24" rows={2} />
@@ -2648,7 +2677,7 @@ export function IssueDetail() {
 
       <Separator />
 
-      <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-3">
+      <Tabs id="issue-detail-comments" value={detailTab} onValueChange={setDetailTab} className="scroll-mt-16 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList variant="line" className="justify-start gap-1">
             <TabsTrigger value="chat" className="gap-1.5">
@@ -2666,18 +2695,6 @@ export function IssueDetail() {
             ))}
           </TabsList>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={!firstCommentId}
-              onClick={handleJumpToFirstComment}
-              className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
-              title={firstCommentId ? "Jump to the first comment" : "No comments yet"}
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-              First comment
-            </Button>
             <div className="flex items-center gap-1 rounded-md border border-border p-0.5 text-xs" aria-label="Timeline order">
               <ArrowDownUp className="ml-1 h-3.5 w-3.5 text-muted-foreground" />
               {([
