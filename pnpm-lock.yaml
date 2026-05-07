@@ -647,6 +647,9 @@ importers:
       '@paperclipai/adapter-codex-local':
         specifier: workspace:*
         version: link:../packages/adapters/codex-local
+      '@paperclipai/adapter-codex-openai-compat':
+        specifier: workspace:*
+        version: link:../packages/adapters/codex-openai-compat
       '@paperclipai/adapter-cursor-local':
         specifier: workspace:*
         version: link:../packages/adapters/cursor-local
