@@ -20,6 +20,18 @@ import {
 } from "@paperclipai/adapter-codex-local/server";
 import { agentConfigurationDoc as codexAgentConfigurationDoc, models as codexModels } from "@paperclipai/adapter-codex-local";
 import {
+  execute as codexOpenAiCompatExecute,
+  testEnvironment as codexOpenAiCompatTestEnvironment,
+  sessionCodec as codexOpenAiCompatSessionCodec,
+  listCodexSkills as listCodexOpenAiCompatSkills,
+  syncCodexSkills as syncCodexOpenAiCompatSkills,
+} from "@paperclipai/adapter-codex-openai-compat/server";
+import {
+  agentConfigurationDoc as codexOpenAiCompatAgentConfigurationDoc,
+  models as codexOpenAiCompatModels,
+  getConfigSchema as getCodexOpenAiCompatConfigSchema,
+} from "@paperclipai/adapter-codex-openai-compat";
+import {
   execute as cursorExecute,
   listCursorSkills,
   syncCursorSkills,
@@ -120,6 +132,23 @@ const codexLocalAdapter: ServerAdapterModule = {
   requiresMaterializedRuntimeSkills: false,
   agentConfigurationDoc: codexAgentConfigurationDoc,
   getQuotaWindows: codexGetQuotaWindows,
+};
+
+const codexOpenAiCompatAdapter: ServerAdapterModule = {
+  type: "codex_openai_compat",
+  execute: codexOpenAiCompatExecute,
+  testEnvironment: codexOpenAiCompatTestEnvironment,
+  listSkills: listCodexOpenAiCompatSkills,
+  syncSkills: syncCodexOpenAiCompatSkills,
+  sessionCodec: codexOpenAiCompatSessionCodec,
+  sessionManagement: getAdapterSessionManagement("codex_openai_compat") ?? undefined,
+  models: codexOpenAiCompatModels,
+  supportsLocalAgentJwt: true,
+  supportsInstructionsBundle: true,
+  instructionsPathKey: "instructionsFilePath",
+  requiresMaterializedRuntimeSkills: false,
+  agentConfigurationDoc: codexOpenAiCompatAgentConfigurationDoc,
+  getConfigSchema: getCodexOpenAiCompatConfigSchema,
 };
 
 const cursorLocalAdapter: ServerAdapterModule = {
@@ -231,6 +260,7 @@ function registerBuiltInAdapters() {
   for (const adapter of [
     claudeLocalAdapter,
     codexLocalAdapter,
+    codexOpenAiCompatAdapter,
     openCodeLocalAdapter,
     piLocalAdapter,
     cursorLocalAdapter,
